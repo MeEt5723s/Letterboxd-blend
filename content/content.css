@@ -1,0 +1,10 @@
+#lb-blend-btn {
+    margin-left: 20px;
+    padding: 8px 16px;
+    border: none;
+    border-radius: 8px;
+    background: #00e054;
+    color: black;
+    font-weight: bold;
+    cursor: pointer;
+}

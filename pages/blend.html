@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Letterboxd Blend</title>
+  <link rel="stylesheet" href="blend.css">
+</head>
+<body>
+
+<div id="loading-screen">
+
+  <div class="loading-users">
+    <div class="loading-user">
+      <div class="avatar-placeholder" id="avatar1">
+        <span id="loading-user1"></span>
+      </div>
+    </div>
+
+    <div class="loading-user">
+      <div class="avatar-placeholder" id="avatar2">
+        <span id="loading-user2"></span>
+      </div>
+    </div>
+  </div>
+
+  <p id="loading-text">
+    Fetching films...
+  </p>
+
+  <div class="progress">
+    <div
+      id="progress-bar"
+      class="progress-fill"
+    ></div>
+  </div>
+
+</div>
+
+<div class="container">
+
+  <header class="header">
+    <h1>Letterboxd Blend</h1>
+    <div id="users"></div>
+  </header>
+
+  <div class="top-dashboard">
+
+    <section class="stats-card">
+
+      <div class="score-circle">
+        <span id="compatibility-number">
+          0%
+        </span>
+        <small>Compatibility</small>
+      </div>
+
+      <div class="stats-info">
+        <h2 id="shared-count"></h2>
+        <p id="avg-difference"></p>
+
+        <button
+          id="one-sided-btn"
+          class="toggle-btn"
+        >
+          🎭 Only One Rated
+        </button>
+
+        <div
+          id="one-sided-section"
+          class="hidden-section"
+        ></div>
+      </div>
+
+    </section>
+
+    <section class="insights-card">
+
+      <button
+        class="toggle-btn"
+        id="agreement-btn"
+      >
+        ❤️ Biggest Agreements
+      </button>
+
+      <div
+        id="agreements"
+        class="hidden-section"
+      ></div>
+
+      <button
+        class="toggle-btn"
+        id="disagreement-btn"
+      >
+        ⚡ Biggest Disagreements
+      </button>
+
+      <div
+        id="disagreements"
+        class="hidden-section"
+      ></div>
+
+    </section>
+
+  </div>
+
+  <section>
+    <h2 class="movies-heading">
+      Shared Movies
+    </h2>
+
+    <div id="movies-grid"></div>
+  </section>
+
+</div>
+
+<script src="scraper.js"></script>
+<script src="blend.js"></script>
+
+</body>
+</html>
