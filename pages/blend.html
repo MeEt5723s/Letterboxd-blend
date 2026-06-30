@@ -5,23 +5,53 @@
   <title>Letterboxd Blend</title>
   <link rel="stylesheet" href="blend.css">
 </head>
-<body>
 
+<body>
+<div id="one-sided-modal" class="modal">
+  <div class="modal-content">
+
+    <button id="close-modal">
+      ✕
+    </button>
+
+    <h2 class="modal-heading">Incomplete Ratings</h2>
+
+    <div id="modal-movies"></div>
+
+  </div>
+</div>
+
+<div id="choose-friends-modal" class="modal">
+  <div class="modal-content">
+
+    <button id="close-choose-friends">
+      ✕
+    </button>
+
+    <h2 class="modal-heading">Choose Friends</h2>
+    <p class="modal-subtext">People you follow</p>
+
+    <div id="following-list" class="following-list">
+      <p id="following-loading-text" class="following-loading-text">
+        Loading your following list...
+      </p>
+    </div>
+
+    <div class="manual-add-row">
+      <input
+        type="text"
+        id="manual-friend-input"
+        placeholder="Or type a username"
+        autocomplete="off"
+      >
+      <button id="manual-friend-add" type="button">Add</button>
+    </div>
+
+  </div>
+</div>
 <div id="loading-screen">
 
-  <div class="loading-users">
-    <div class="loading-user">
-      <div class="avatar-placeholder" id="avatar1">
-        <span id="loading-user1"></span>
-      </div>
-    </div>
-
-    <div class="loading-user">
-      <div class="avatar-placeholder" id="avatar2">
-        <span id="loading-user2"></span>
-      </div>
-    </div>
-  </div>
+  <div class="loading-users" id="loading-users-list"></div>
 
   <p id="loading-text">
     Fetching films...
@@ -41,6 +71,16 @@
   <header class="header">
     <h1>Letterboxd Blend</h1>
     <div id="users"></div>
+
+    <div id="add-friend-area">
+      <button
+        id="add-friend-btn"
+        class="add-friend-btn"
+        type="button"
+      >
+        + Add Friend
+      </button>
+    </div>
   </header>
 
   <div class="top-dashboard">
@@ -62,7 +102,7 @@
           id="one-sided-btn"
           class="toggle-btn"
         >
-          🎭 Only One Rated
+          🎭 Incomplete Ratings
         </button>
 
         <div
@@ -99,14 +139,37 @@
         class="hidden-section"
       ></div>
 
+      <button
+        class="toggle-btn"
+        id="pairwise-btn"
+      >
+        👥 Pairwise Compatibility
+      </button>
+
+      <div
+        id="pairwise"
+        class="hidden-section"
+      ></div>
+
     </section>
 
   </div>
 
   <section>
-    <h2 class="movies-heading">
-      Shared Movies
-    </h2>
+    <div class="movies-heading-row">
+      <h2 class="movies-heading">
+        Shared Movies
+      </h2>
+
+      <div id="shared-mode-toggle" class="shared-mode-toggle hidden">
+        <button id="mode-all-btn" class="mode-btn active" type="button">
+          All watched
+        </button>
+        <button id="mode-any-btn" class="mode-btn" type="button">
+          2+ watched
+        </button>
+      </div>
+    </div>
 
     <div id="movies-grid"></div>
   </section>
