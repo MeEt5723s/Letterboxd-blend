@@ -5,14 +5,20 @@ function buildPosterUrl(id, slug) {
   return `https://a.ltrbxd.com/resized/film-poster/${digits}/${id}-${imageSlug}-0-150-0-225-crop.jpg`;
 }
 
-export async function getUserFilms(username) {
+export async function getUserFilms(username, onProgress) {
   const movies = [];
   let page = 1;
 
   while (true) {
     const url = `https://letterboxd.com/${username}/films/page/${page}/`;
 
-    const response = await fetch(url, { credentials: "include" });
+    const response = await fetch(
+    `${url}?_=${Date.now()}`,
+    {
+        credentials: "include",
+        cache: "no-store"
+    }
+);
 
     if (response.status === 404) break;
 
@@ -94,8 +100,9 @@ posters.forEach((poster) => {
   });
 });
 
+    if (onProgress) onProgress(movies.length);
+
     page++;
   }
-
   return movies;
 }

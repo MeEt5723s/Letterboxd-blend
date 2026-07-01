@@ -1,6 +1,7 @@
 const TMDB_API_KEY = "caaba2a8686cdefda89210da60097d41";
 const BASE_URL = "https://api.themoviedb.org/3";
 const IMAGE_BASE = "https://image.tmdb.org/t/p/w500";
+const BACKDROP_BASE = "https://image.tmdb.org/t/p/w1280";
 
 
 import {
@@ -27,15 +28,19 @@ async function tmdbFetch(endpoint) {
 export async function searchMovie(title, year = "") {
 
     title = title.replace(/\s*\(\d{4}\)$/, "");
+
+    // Cache key includes the year so different films that share a title
+    // (remakes, sequels-in-name-only, etc.) don't collide with each
+    // other in the cache.
+    const cacheKey = year ? `${title}::${year}` : title;
+
     // Check cache first
-    const cached = getCachedMovie(title);
+    const cached = getCachedMovie(cacheKey);
 
     if (cached) {
-        console.log("Cache hit:", title);
         return cached;
     }
 
-    console.log("TMDB request:", title);
 
     const query =
         `/search/movie?query=${encodeURIComponent(title)}` +
@@ -46,12 +51,46 @@ export async function searchMovie(title, year = "") {
     if (!data.results.length)
         return null;
 
-    const movie = data.results[0];
+    // TMDB's `year` param only nudges ranking, it doesn't filter — so
+    // the top result can still be the wrong film (e.g. a more popular
+    // same-titled movie from a different year). Prefer an exact
+    // title+year match, then any exact-year match, then an exact title
+    // match, before falling back to TMDB's own top pick.
+    const movie = pickBestMatch(data.results, title, year);
 
     // Save to cache
-    cacheMovie(title, movie);
+    cacheMovie(cacheKey, movie);
 
     return movie;
+}
+
+function pickBestMatch(results, title, year) {
+
+    const normalize = s =>
+        (s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+
+    const target = normalize(title);
+
+    if (year) {
+
+        const titleAndYear = results.find(r =>
+            r.release_date?.slice(0, 4) === year &&
+            normalize(r.title) === target
+        );
+        if (titleAndYear) return titleAndYear;
+
+        const yearOnly = results.find(
+            r => r.release_date?.slice(0, 4) === year
+        );
+        if (yearOnly) return yearOnly;
+
+    }
+
+    const titleOnly = results.find(r => normalize(r.title) === target);
+    if (titleOnly) return titleOnly;
+
+    return results[0];
+
 }
 
 export async function getMovie(id) {
@@ -106,6 +145,34 @@ export function getPoster(path) {
         return "images/noPoster.png";
 
     return IMAGE_BASE + path;
+
+}
+
+export function getBackdrop(path) {
+
+    if (!path)
+        return null;
+
+    return BACKDROP_BASE + path;
+
+}
+
+// Returns the country-keyed watch-provider map for a movie, e.g.
+// { US: { link, flatrate: [...], rent: [...], buy: [...] }, IN: {...}, ... }
+export async function getWatchProviders(movieId) {
+
+    try {
+
+        const data =
+            await tmdbFetch(`/movie/${movieId}/watch/providers`);
+
+        return data.results || {};
+
+    } catch (e) {
+
+        return {};
+
+    }
 
 }
 

@@ -5,16 +5,19 @@ const USER_COLORS = [
   "#b388ff", "#ffd740", "#ff5252", "#69f0ae"
 ];
 import { getUserFilms } from "../scraper/userFilms.js";
-import { searchMovie, getPoster } from "../api/tmdb.js";
+import {
+  searchMovie,
+  getPoster,
+  getBackdrop,
+  getWatchProviders
+} from "../api/tmdb.js";
 import { buildPosterUrl, applyPosterFallback } from "../utils/posterUtils.js";
 
 (async () => {
 
     const movie1 = await searchMovie("Interstellar");
-    console.log(movie1);
 
     const movie2 = await searchMovie("Interstellar");
-    console.log(movie2);
 
 })();
 function colorFor(username) {
@@ -65,6 +68,13 @@ let users = getUsersFromUrl();
 const userData = {}; // username -> { films, avatar }
 let sharedMode = "all"; // "all" | "any"
 
+// Loading-screen feedback timers (declared here, not near their
+// functions below, since the main IIFE further down calls
+// loadAllUsers() immediately and would otherwise hit these while
+// still in their temporal dead zone).
+let messageRotationTimer = null;
+let progressTrickleTimer = null;
+
 // Friends added via the "Add Friend" flow that haven't been fetched
 // and folded into the comparison yet — they only become part of
 // `userData` / the rendered comparison once "Compare" is clicked.
@@ -97,20 +107,46 @@ function renderUserChips() {
 async function loadAllUsers(usernames) {
   updateLoading(10);
   buildLoadingAvatars(usernames);
+  startLoadingFeedback();
+  startProgressTrickle(10, 85);
 
-  await Promise.all(
-    usernames.map(async (u, i) => {
-      const [films, avatar] = await Promise.all([
-        getUserFilms(u),
-        getAvatar(u)
-      ]);
+  await fetchUsersWithProgress(usernames);
 
-      userData[u] = { films, avatar };
-      setLoadingAvatar(i, avatar);
-    })
-  );
+  stopLoadingMessageRotation();
+  stopProgressTrickle();
+  updateLoading(95);
+}
 
-  updateLoading(70);
+// Fetches avatars and film lists for a batch of usernames, filling in
+// userData as results come in. Avatars are requested independently of
+// (usually much slower) film scraping, so all of them can pop in
+// together almost instantly instead of being gated behind whichever
+// user happens to have the biggest watchlist. Film progress is reported
+// live per-user via a running count.
+async function fetchUsersWithProgress(usernames) {
+  const avatarWork = usernames.map(async (u, i) => {
+    const avatar = await getAvatar(u);
+
+    if (userData[u]) {
+      userData[u].avatar = avatar;
+    } else {
+      userData[u] = { films: [], avatar };
+    }
+
+    setLoadingAvatar(i, avatar);
+  });
+
+  const filmWork = usernames.map(async (u, i) => {
+    const films = await getUserFilms(u, count => setLoadingCount(i, count));
+
+    if (userData[u]) {
+      userData[u].films = films;
+    } else {
+      userData[u] = { films, avatar: null };
+    }
+  });
+
+  await Promise.all([...avatarWork, ...filmWork]);
 }
 
 function buildLoadingAvatars(usernames) {
@@ -122,8 +158,9 @@ function buildLoadingAvatars(usernames) {
     div.className = "loading-user";
 
     div.innerHTML = `
-      <div class="avatar-placeholder" id="avatar-${i}"></div>
+      <div class="avatar-placeholder loading" id="avatar-${i}"></div>
       <p>${u}</p>
+      <small class="loading-count" id="film-count-${i}"></small>
     `;
 
     container.appendChild(div);
@@ -131,17 +168,81 @@ function buildLoadingAvatars(usernames) {
 }
 
 function setLoadingAvatar(index, avatarUrl) {
-  if (!avatarUrl) return;
-
   const el = document.getElementById(`avatar-${index}`);
   if (!el) return;
+
+  el.classList.remove("loading");
+
+  if (!avatarUrl) return;
 
   el.style.backgroundImage = `url(${avatarUrl})`;
   el.style.backgroundSize = "cover";
   el.style.backgroundPosition = "center";
 }
 
+function setLoadingCount(index, count) {
+  const el = document.getElementById(`film-count-${index}`);
+  if (!el) return;
+
+  el.textContent = `${count} film${count === 1 ? "" : "s"} found`;
+}
+
+// ---------- Loading feedback (messages + progress trickle) ----------
+// The real fetch duration is unknown up front (it depends entirely on
+// how many films each user has), so instead of a progress bar that
+// looks frozen, we trickle it forward continuously and rotate through
+// a few status messages so the wait doesn't feel dead.
+
+const LOADING_MESSAGES = [
+  "Fetching films...",
+  "Scrolling through years of movie nights...",
+  "Big watchlists take a little longer...",
+  "Matching ratings to films...",
+  "Letterboxd pages don't scrape themselves...",
+  "Almost there, hang tight..."
+];
+
+function startLoadingFeedback() {
+  stopLoadingMessageRotation();
+
+  const textEl = document.getElementById("loading-text");
+  let i = 0;
+
+  messageRotationTimer = setInterval(() => {
+    i = (i + 1) % LOADING_MESSAGES.length;
+    textEl.textContent = LOADING_MESSAGES[i];
+  }, 3200);
+}
+
+function stopLoadingMessageRotation() {
+  if (messageRotationTimer) {
+    clearInterval(messageRotationTimer);
+    messageRotationTimer = null;
+  }
+}
+
+function startProgressTrickle(from, cap) {
+  stopProgressTrickle();
+  let value = from;
+
+  progressTrickleTimer = setInterval(() => {
+    if (value >= cap) return;
+
+    value += Math.random() * 2 + 0.5;
+    updateLoading(Math.min(value, cap));
+  }, 400);
+}
+
+function stopProgressTrickle() {
+  if (progressTrickleTimer) {
+    clearInterval(progressTrickleTimer);
+    progressTrickleTimer = null;
+  }
+}
+
 function finishLoading() {
+  stopLoadingMessageRotation();
+  stopProgressTrickle();
   updateLoading(100);
 
   const loading = document.getElementById("loading-screen");
@@ -342,23 +443,37 @@ animateCompatibility(finalCompatibility);
     m => ratedByEntries(m).length >= 2
   );
 
-  const withSpread = ratedMovies.map(m => ({
-    movie: m,
-    spread: ratingSpread(m)
-  }));
+ const withSpread = ratedMovies
+  .map(movie => ({
+    movie,
+    spread: ratingSpread(movie)
+  }))
+  .filter(x => x.spread != null);
 
-  const biggestAgreements = [...withSpread]
-    .sort((a, b) => a.spread - b.spread)
-    .slice(0, 5)
-    .map(x => x.movie);
+const biggestAgreements = [...withSpread]
+  .sort((a, b) => {
+    if (a.spread !== b.spread) {
+      return a.spread - b.spread;
+    }
 
-  const biggestDisagreements = [...withSpread]
-    .sort((a, b) => b.spread - a.spread)
-    .slice(0, 5)
-    .map(x => x.movie);
+    return ratedByEntries(b.movie).length - ratedByEntries(a.movie).length;
+  })
+  .slice(0, 5)
+  .map(x => x.movie);
 
-  renderInsights(biggestAgreements, "agreements");
-  renderInsights(biggestDisagreements, "disagreements");
+const majorDisagreements = [...withSpread]
+  .filter(x => x.spread >= 2)
+  .sort((a, b) => {
+    if (b.spread !== a.spread) {
+      return b.spread - a.spread;
+    }
+
+    return ratedByEntries(b.movie).length - ratedByEntries(a.movie).length;
+  })
+  .map(x => x.movie);
+
+renderInsights(biggestAgreements, "agreements");
+renderInsights(majorDisagreements, "disagreements");
 
   // Incomplete ratings: everyone watched, not everyone rated
   const incompleteRatings = [...movieMap.values()].filter(m => {
@@ -394,10 +509,6 @@ function notWatchedIcon() {
 }
 
 function userRatingRows(movie) {
-  // Show a row for every user currently in the comparison — even
-  // ones who never watched this movie — rather than only the ones
-  // present in movie.ratings, so nobody silently disappears from
-  // the list when comparing 2+ people.
   return users
     .map(u => {
       const watched = Object.prototype.hasOwnProperty.call(
@@ -409,9 +520,11 @@ function userRatingRows(movie) {
         ? formatRating(movie.ratings[u])
         : notWatchedIcon();
 
-      return `<span style="color:${colorFor(u)}">
-        ${u}: ${valueHtml}
-      </span>`;
+      return `
+        <span style="color:${colorFor(u)}">
+          ${u}: ${valueHtml}
+        </span>
+      `;
     })
     .join("<br>");
 }
@@ -422,7 +535,7 @@ function renderInsights(movies, containerId) {
 
   movies.forEach(movie => {
     const poster = buildPosterUrl(movie.id, movie.slug);
-
+    const spread = ratingSpread(movie);
     const card = document.createElement("div");
     card.className = "insight-poster-card";
 
@@ -434,8 +547,16 @@ function renderInsights(movies, containerId) {
       >
 
       <div class="insight-movie-title">
-        ${movie.title}
-      </div>
+    ${movie.title}
+</div>
+
+${
+    spread != null
+        ? `<div class="insight-spread">
+            ${spread}★ difference
+           </div>`
+        : ""
+}
 
       <div class="insight-ratings">
         ${userRatingRows(movie)}
@@ -479,6 +600,8 @@ function renderMovies(movies) {
     const img = card.querySelector("img");
     img.onerror = () =>
     applyPosterFallback(img, movie);
+
+    card.addEventListener("click", () => openMovieDetail(movie));
 
     grid.appendChild(card);
   });
@@ -642,6 +765,180 @@ document
       e.currentTarget.classList.remove("open");
     }
   });
+
+// ---------- Movie Detail Modal ----------
+
+const movieDetailModal = document.getElementById("movie-detail-modal");
+const movieDetailBody = document.getElementById("movie-detail-body");
+
+movieDetailModal.addEventListener("click", e => {
+  if (e.target.id === "movie-detail-modal") {
+    e.currentTarget.classList.remove("open");
+  }
+});
+
+function letterboxdFilmUrl(slug) {
+  return `https://letterboxd.com/film/${slug}/`;
+}
+
+// Best-effort region guess from the browser locale (e.g. "en-IN" -> "IN"),
+// falling back to "US" since that's where TMDB has the most provider data.
+function regionCode() {
+  const lang =
+    navigator.language ||
+    (navigator.languages && navigator.languages[0]) ||
+    "en-US";
+
+  const parts = lang.split("-");
+
+  return parts.length > 1 ? parts[1].toUpperCase() : "US";
+}
+
+function bindCloseMovieDetail() {
+  const btn = document.getElementById("close-movie-detail");
+
+  if (btn) {
+    btn.addEventListener("click", () => {
+      movieDetailModal.classList.remove("open");
+    });
+  }
+}
+
+async function openMovieDetail(movie) {
+  movieDetailModal.classList.add("open");
+
+  movieDetailBody.innerHTML = `
+    <button id="close-movie-detail">✕</button>
+    <div class="movie-detail-loading">Loading film details...</div>
+  `;
+
+  bindCloseMovieDetail();
+
+  const lbUrl = letterboxdFilmUrl(movie.slug);
+
+  const yearMatch = movie.slug?.match(/-(\d{4})(?:-\d+)?$/);
+  const slugYear = yearMatch ? yearMatch[1] : "";
+
+  let tmdbMovie = null;
+  let providers = null;
+
+  try {
+    tmdbMovie = await searchMovie(movie.title, slugYear);
+
+    if (tmdbMovie?.id) {
+      const results = await getWatchProviders(tmdbMovie.id);
+      providers = results[regionCode()] || results["US"] || null;
+    }
+  } catch (e) {
+    tmdbMovie = null;
+  }
+
+  const backdropUrl = tmdbMovie?.backdrop_path
+    ? getBackdrop(tmdbMovie.backdrop_path)
+    : null;
+
+  const year =
+    tmdbMovie?.release_date?.slice(0, 4) || slugYear || "";
+
+  movieDetailBody.innerHTML = `
+    <button id="close-movie-detail">✕</button>
+
+    <div
+      class="movie-detail-header"
+      style="${
+        backdropUrl ? `background-image:url('${backdropUrl}')` : ""
+      }"
+    >
+      <div class="movie-detail-title-wrap">
+        <h2 class="movie-detail-title">${movie.title}</h2>
+        ${year ? `<div class="movie-detail-year">${year}</div>` : ""}
+      </div>
+    </div>
+
+    <div class="movie-detail-body-inner">
+      <div class="watch-section-title">Where to Watch</div>
+      ${renderWatchProviders(providers)}
+
+      <div class="movie-detail-actions">
+        <a
+          href="${lbUrl}"
+          target="_blank"
+          rel="noopener"
+          class="letterboxd-link-btn"
+        >
+          View on Letterboxd ↗
+        </a>
+      </div>
+    </div>
+  `;
+
+  bindCloseMovieDetail();
+}
+
+function renderWatchProviders(providers) {
+  const fallback = `
+    <p class="no-providers">
+      No streaming info found for your region — check Letterboxd
+      for showtimes and availability.
+    </p>
+  `;
+
+  if (!providers) return fallback;
+
+  const groups = [
+    { key: "flatrate", label: "Stream" },
+    { key: "rent", label: "Rent" },
+    { key: "buy", label: "Buy" }
+  ];
+
+  const sections = groups
+    .map(g => {
+      const list = providers[g.key];
+      if (!list || !list.length) return "";
+
+      const chips = list
+        .map(
+          p => `
+            <a
+              class="provider-chip"
+              href="${providers.link || "https://www.justwatch.com/"}"
+              target="_blank"
+              rel="noopener"
+            >
+              ${
+                p.logo_path
+                  ? `<img src="https://image.tmdb.org/t/p/w92${p.logo_path}" alt="${p.provider_name}">`
+                  : ""
+              }
+              ${p.provider_name}
+            </a>
+          `
+        )
+        .join("");
+
+      return `
+        <div class="watch-group">
+          <div class="watch-group-label">${g.label}</div>
+          <div class="provider-row">${chips}</div>
+        </div>
+      `;
+    })
+    .join("");
+
+  if (!sections) return fallback;
+
+  return `
+    ${sections}
+    <div class="justwatch-attribution">
+      Streaming availability by
+      <a
+        href="${providers.link || "https://www.justwatch.com/"}"
+        target="_blank"
+        rel="noopener"
+      >JustWatch</a>
+    </div>
+  `;
+}
 
 // ---------- Shared Movies Mode Toggle ----------
 
@@ -868,20 +1165,14 @@ document
     loading.style.display = "flex";
     updateLoading(10);
     buildLoadingAvatars(toFetch);
+    startLoadingFeedback();
+    startProgressTrickle(10, 85);
 
-    await Promise.all(
-      toFetch.map(async (u, i) => {
-        const [films, avatar] = await Promise.all([
-          getUserFilms(u),
-          getAvatar(u)
-        ]);
+    await fetchUsersWithProgress(toFetch);
 
-        userData[u] = { films, avatar };
-        setLoadingAvatar(i, avatar);
-      })
-    );
-
-    updateLoading(90);
+    stopLoadingMessageRotation();
+    stopProgressTrickle();
+    updateLoading(95);
 
     pendingFriends = pendingFriends.filter(u => !toFetch.includes(u));
 

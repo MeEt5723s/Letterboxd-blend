@@ -349,6 +349,7 @@ body {
 
 .movie-card {
   transition: .2s;
+  cursor: pointer;
 }
 
 .movie-card:hover {
@@ -410,6 +411,15 @@ body {
   border: 4px solid #2c3440;
 }
 
+@keyframes avatarPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: .5; }
+}
+
+.avatar-placeholder.loading {
+  animation: avatarPulse 1.3s ease-in-out infinite;
+}
+
 .progress {
   width: 500px;
   height: 12px;
@@ -440,6 +450,15 @@ body {
     color: white;
     font-size: 22px;
     font-weight: 600;
+    margin: 0;
+}
+
+.loading-count {
+    color: #00e054;
+    font-size: 14px;
+    font-weight: 600;
+    min-height: 18px;
+    opacity: .85;
 }
 .insight-title {
   font-weight: bold;
@@ -495,16 +514,33 @@ body {
   margin-bottom: 10px;
 }
 
-.insight-movie-title {
-  font-weight: bold;
-  margin-bottom: 8px;
+.insight-ratings br {
+    display: none;
 }
 
 .insight-ratings {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  color: #9ab;
+    margin-top: 8px;
+    font-size: 14px;
+    line-height: 1.25;
+}
+
+.insight-ratings span {
+    display: block;
+    margin: 1px 0;
+    font-weight: 600;
+}
+.insight-movie-title {
+    font-size: 16px;
+    font-weight: 700;
+    margin-top: 10px;
+    margin-bottom: 4px;
+}
+
+.insight-spread {
+    font-size: 13px;
+    font-weight: 600;
+    color: #b8b8b8;
+    margin-bottom: 8px;
 }
 
 .modal {
@@ -771,4 +807,179 @@ body {
   font-size: 20px;
   font-weight: bold;
   text-align: center;
+}
+
+/* Movie detail modal */
+
+.movie-detail-content {
+  padding: 0;
+  overflow: hidden;
+  position: relative;
+}
+
+.movie-detail-header {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 7;
+  background-color: #26303a;
+  background-size: cover;
+  background-position: center;
+}
+
+.movie-detail-header::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    to top,
+    #1c2228 0%,
+    rgba(28, 34, 40, .25) 55%,
+    rgba(28, 34, 40, 0) 100%
+  );
+}
+
+.movie-detail-title-wrap {
+  position: absolute;
+  left: 32px;
+  right: 76px;
+  bottom: 20px;
+  z-index: 1;
+}
+
+.movie-detail-title {
+  margin: 0;
+  font-size: 30px;
+  font-weight: 700;
+  color: #fff;
+}
+
+.movie-detail-year {
+  margin-top: 4px;
+  color: #9ab;
+  font-size: 15px;
+}
+
+.movie-detail-body-inner {
+  padding: 28px 32px 32px;
+}
+
+.movie-detail-loading {
+  padding: 90px 32px;
+  text-align: center;
+  color: #9ab;
+  font-size: 16px;
+}
+
+.watch-section-title {
+  margin: 0 0 14px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #9ab;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+}
+
+.watch-group {
+  margin-bottom: 18px;
+}
+
+.watch-group-label {
+  margin-bottom: 8px;
+  font-size: 13px;
+  color: #8fa3b0;
+}
+
+.provider-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.provider-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #14181c;
+  border-radius: 999px;
+  padding: 6px 14px 6px 6px;
+  color: #ccd;
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+  transition: .2s;
+}
+
+.provider-chip:hover {
+  background: #26303a;
+  color: #fff;
+}
+
+.provider-chip img {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.no-providers {
+  color: #8fa3b0;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.justwatch-attribution {
+  margin-top: 16px;
+  font-size: 12px;
+  color: #5c6b78;
+}
+
+.justwatch-attribution a {
+  color: #8fa3b0;
+}
+
+.movie-detail-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 26px;
+}
+
+.letterboxd-link-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: #00e054;
+  color: #14181c;
+  border: none;
+  border-radius: 999px;
+  padding: 12px 24px;
+  font-weight: 700;
+  font-size: 15px;
+  text-decoration: none;
+  cursor: pointer;
+  transition: .2s;
+}
+
+.letterboxd-link-btn:hover {
+  background: #00c948;
+}
+
+#close-movie-detail {
+  position: absolute;
+  right: 16px;
+  top: 16px;
+  width: 38px;
+  height: 38px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(20, 24, 28, .6);
+  color: white;
+  cursor: pointer;
+  font-size: 20px;
+  z-index: 2;
+  transition: .2s;
+}
+
+#close-movie-detail:hover {
+  background: rgba(20, 24, 28, .85);
 }
