@@ -248,7 +248,7 @@ function recomputeAndRender() {
   document.getElementById("avg-difference").textContent =
     `Average rating difference: ${overallAvgDiff.toFixed(2)} ★`;
 
-  animateCompatibility(finalCompatibility);
+  animateCompatibility(overallCompatibility);
 
   // Toggle visibility of shared-movie mode switch
   const modeToggle = document.getElementById("shared-mode-toggle");
