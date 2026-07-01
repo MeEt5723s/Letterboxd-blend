@@ -1,5 +1,3 @@
-console.log("Letterboxd Blend loaded!");
-
 function addBlendButton() {
     const navList = document.querySelector(
         ".profile-navigation .navlist"

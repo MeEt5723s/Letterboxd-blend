@@ -5,6 +5,10 @@
 
   "permissions": ["tabs"],
 
+  "host_permissions": [
+    "https://api.themoviedb.org/*"
+  ],
+
   "background": {
     "service_worker": "background/background.js"
   },
@@ -20,9 +24,9 @@
   "web_accessible_resources": [
     {
       "resources": [
-        "pages/blend.html",
-        "pages/blend.js",
-        "pages/blend.css"
+        "UI/blend.html",
+        "UI/blend.js",
+        "UI/blend.css"
       ],
       "matches": ["<all_urls>"]
     }

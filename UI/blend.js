@@ -4,7 +4,19 @@ const USER_COLORS = [
   "#00e054", "#40bcf4", "#ff8000", "#ff4081",
   "#b388ff", "#ffd740", "#ff5252", "#69f0ae"
 ];
+import { getUserFilms } from "../scraper/userFilms.js";
+import { searchMovie, getPoster } from "../api/tmdb.js";
+import { buildPosterUrl, applyPosterFallback } from "../utils/posterUtils.js";
 
+(async () => {
+
+    const movie1 = await searchMovie("Interstellar");
+    console.log(movie1);
+
+    const movie2 = await searchMovie("Interstellar");
+    console.log(movie2);
+
+})();
 function colorFor(username) {
   const i = users.indexOf(username);
   return USER_COLORS[i % USER_COLORS.length];
@@ -210,13 +222,42 @@ function computePairwise(movieMap) {
       const compatibility =
   avgDiff == null
     ? null
-    : Math.round((1 - avgDiff / 4.5) * 100);
+    : computeCompatibility(avgDiff, diffs.length);
 
       matrix.push({ a, b, avgDiff, compatibility, count: diffs.length });
     }
   }
 
   return matrix;
+}
+
+function computeRatingSimilarity(avgDiff) {
+  if (avgDiff == null) return 0;
+  return Math.max(0, (1 - avgDiff / 4.5) * 100);
+}
+
+function computeSharedScore(sharedCount) {
+  // Saturates around 300 shared films
+  return Math.min(100, (sharedCount / 300) * 100);
+}
+
+function computeConfidence(sharedCount) {
+  return sharedCount / (sharedCount + 100);
+}
+
+function computeCompatibility(avgDiff, sharedCount) {
+
+  const ratingSimilarity = computeRatingSimilarity(avgDiff);
+
+  const sharedScore = computeSharedScore(sharedCount);
+
+  const confidence = computeConfidence(sharedCount);
+
+  const score =
+      ratingSimilarity * 0.60 +
+      sharedScore * 0.40;
+
+  return Math.round(score * confidence);
 }
 // ---------- Compute + Render ----------
 
@@ -241,6 +282,7 @@ function recomputeAndRender() {
 
   // Shared movies (mode-dependent)
   const sharedMovies = getSharedMovies(movieMap, sharedMode);
+  const sharedCount = sharedMovies.length;
 
   document.getElementById("shared-count").textContent =
     `${sharedMovies.length} Shared Films`;
@@ -248,7 +290,31 @@ function recomputeAndRender() {
   document.getElementById("avg-difference").textContent =
     `Average rating difference: ${overallAvgDiff.toFixed(2)} ★`;
 
-  animateCompatibility(overallCompatibility);
+  const ratingSimilarity =
+    validPairs.length === 0
+        ? 0
+        : Math.round(
+            validPairs.reduce(
+                (s,p)=>s+computeRatingSimilarity(p.avgDiff),
+                0
+            ) / validPairs.length
+        );
+
+const confidence =
+    computeConfidence(sharedCount);
+
+const sharedScore =
+    computeSharedScore(sharedCount);
+
+const finalCompatibility =
+    Math.round(
+        (
+            ratingSimilarity * 0.60 +
+            sharedScore * 0.40
+        ) * confidence
+    );
+
+animateCompatibility(finalCompatibility);
 
   // Toggle visibility of shared-movie mode switch
   const modeToggle = document.getElementById("shared-mode-toggle");
@@ -377,9 +443,8 @@ function renderInsights(movies, containerId) {
     `;
 
     const img = card.querySelector(".insight-poster");
-    img.onerror = () => {
-      img.src = "https://s.ltrbxd.com/static/img/empty-poster-230.png";
-    };
+    img.onerror = () =>
+    applyPosterFallback(img, movie);
 
     container.appendChild(card);
   });
@@ -412,9 +477,8 @@ function renderMovies(movies) {
     `;
 
     const img = card.querySelector("img");
-    img.onerror = () => {
-      img.src = "https://s.ltrbxd.com/static/img/empty-poster-230.png";
-    };
+    img.onerror = () =>
+    applyPosterFallback(img, movie);
 
     grid.appendChild(card);
   });
@@ -459,9 +523,8 @@ function renderIncompleteRatings(movies) {
     `;
 
     const img = div.querySelector("img");
-    img.onerror = () => {
-      img.src = "https://s.ltrbxd.com/static/img/empty-poster-230.png";
-    };
+    img.onerror = () =>
+    applyPosterFallback(img, movie);
 
     modalMovies.appendChild(div);
   });
