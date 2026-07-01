@@ -53,16 +53,24 @@ let users = getUsersFromUrl();
 const userData = {}; // username -> { films, avatar }
 let sharedMode = "all"; // "all" | "any"
 
+// Friends added via the "Add Friend" flow that haven't been fetched
+// and folded into the comparison yet — they only become part of
+// `userData` / the rendered comparison once "Compare" is clicked.
+let pendingFriends = [];
+
 document.getElementById("users").innerHTML = renderUserChips();
 
 function renderUserChips() {
   return users
-    .map(
-      u =>
-        `<span class="user-chip" style="color:${colorFor(
-          u
-        )}">${u}</span>`
-    )
+    .map(u => {
+      const pending = pendingFriends.includes(u);
+
+      return `<span class="user-chip${
+        pending ? " pending-chip" : ""
+      }" style="color:${colorFor(u)}">${u}${
+        pending ? ' <small class="pending-label">(pending)</small>' : ""
+      }</span>`;
+    })
     .join('<span class="user-sep"> × </span>');
 }
 
@@ -200,9 +208,9 @@ function computePairwise(movieMap) {
           : diffs.reduce((s, d) => s + d, 0) / diffs.length;
 
       const compatibility =
-        avgDiff == null
-          ? null
-          : Math.round((1 - avgDiff / 4.5) * 100);
+  avgDiff == null
+    ? null
+    : Math.round((1 - avgDiff / 4.5) * 100);
 
       matrix.push({ a, b, avgDiff, compatibility, count: diffs.length });
     }
@@ -210,7 +218,6 @@ function computePairwise(movieMap) {
 
   return matrix;
 }
-
 // ---------- Compute + Render ----------
 
 function recomputeAndRender() {
@@ -241,7 +248,7 @@ function recomputeAndRender() {
   document.getElementById("avg-difference").textContent =
     `Average rating difference: ${overallAvgDiff.toFixed(2)} ★`;
 
-  animateCompatibility(overallCompatibility);
+  animateCompatibility(finalCompatibility);
 
   // Toggle visibility of shared-movie mode switch
   const modeToggle = document.getElementById("shared-mode-toggle");
@@ -307,13 +314,37 @@ function ratingSpread(movie) {
   return Math.max(...ratings) - Math.min(...ratings);
 }
 
+function notWatchedIcon() {
+  return `<span class="not-watched-icon" title="Not watched">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" stroke-width="2" stroke-linecap="round"
+      stroke-linejoin="round">
+      <path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"></path>
+      <path d="M9.9 4.24A10.94 10.94 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"></path>
+      <path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"></path>
+      <line x1="1" y1="1" x2="23" y2="23"></line>
+    </svg>
+  </span>`;
+}
+
 function userRatingRows(movie) {
-  return watchedBy(movie)
+  // Show a row for every user currently in the comparison — even
+  // ones who never watched this movie — rather than only the ones
+  // present in movie.ratings, so nobody silently disappears from
+  // the list when comparing 2+ people.
+  return users
     .map(u => {
-      const rating = movie.ratings[u];
+      const watched = Object.prototype.hasOwnProperty.call(
+        movie.ratings,
+        u
+      );
+
+      const valueHtml = watched
+        ? formatRating(movie.ratings[u])
+        : notWatchedIcon();
 
       return `<span style="color:${colorFor(u)}">
-        ${u}: ${formatRating(rating)}
+        ${u}: ${valueHtml}
       </span>`;
     })
     .join("<br>");
@@ -610,40 +641,61 @@ function renderFollowingList() {
   followingCache.forEach(person => {
     const isChecked = users.includes(person.username);
 
-    const row = document.createElement("label");
-    row.className = "following-item";
+    const card = document.createElement("label");
+    card.className =
+      "following-item" + (isChecked ? " selected" : "");
 
-    row.innerHTML = `
+    card.innerHTML = `
       <input
         type="checkbox"
         ${isChecked ? "checked" : ""}
       >
-      <div
-        class="following-avatar"
-        ${
-          person.avatar
-            ? `style="background-image:url(${person.avatar})"`
-            : ""
-        }
-      ></div>
-      <span class="following-name">${person.displayName}</span>
+
+      <div class="following-avatar-wrap">
+
+        <div
+          class="following-avatar"
+          ${
+            person.avatar
+              ? `style="background-image:url('${person.avatar}')"`
+              : ""
+          }>
+        </div>
+
+        <div class="following-check">
+          ✓
+        </div>
+
+      </div>
+
+      <div class="following-name">
+        ${person.displayName}
+      </div>
     `;
 
-    const checkbox = row.querySelector("input");
+    const checkbox = card.querySelector("input");
 
     checkbox.addEventListener("change", async () => {
+
       checkbox.disabled = true;
 
       if (checkbox.checked) {
+
+        card.classList.add("selected");
         await addFriend(person.username);
+
       } else {
+
+        card.classList.remove("selected");
         await removeFriend(person.username);
+
       }
 
       checkbox.disabled = false;
+
     });
 
-    followingListEl.appendChild(row);
+    followingListEl.appendChild(card);
   });
 }
 
@@ -672,46 +724,51 @@ manualFriendInput.addEventListener("keydown", e => {
 
 // ---------- Add / Remove Friend ----------
 
+// Adding a friend just marks them as pending — no fetching happens
+// until "Compare" is clicked, so checking boxes in the picker is
+// instant and doesn't trigger any network activity per click.
 async function addFriend(username) {
   if (users.includes(username)) return;
 
-  const loading = document.getElementById("loading-screen");
-  document.getElementById("loading-text").textContent =
-    `Fetching ${username}'s films...`;
-
-  loading.style.display = "flex";
-  updateLoading(10);
-  buildLoadingAvatars([username]);
-
-  const [films, avatar] = await Promise.all([
-    getUserFilms(username),
-    getAvatar(username)
-  ]);
-
-  userData[username] = { films, avatar };
-  setLoadingAvatar(0, avatar);
-
   users.push(username);
+  pendingFriends.push(username);
   updateUrl();
 
   document.getElementById("users").innerHTML = renderUserChips();
-
-  updateLoading(90);
-  recomputeAndRender();
-  finishLoading();
+  updateCompareButton();
 }
 
+// Removing a friend is always immediate:
+// - if they were still pending (never fetched), just drop them, no
+//   recompute needed since they were never part of the rendered comparison.
+// - if they were already part of the comparison, recompute right away
+//   so the user never has to press Compare just to remove someone.
 async function removeFriend(username) {
   const idx = users.indexOf(username);
 
   if (idx <= 0) return; // can't remove the owner (users[0]) or unknown user
 
+  const wasPending = pendingFriends.includes(username);
+
   users.splice(idx, 1);
+  pendingFriends = pendingFriends.filter(u => u !== username);
   delete userData[username];
   updateUrl();
 
   document.getElementById("users").innerHTML = renderUserChips();
-  recomputeAndRender();
+  updateCompareButton();
+
+  if (!wasPending) {
+    recomputeAndRender();
+  }
+}
+
+function updateCompareButton() {
+  const btn = document.getElementById("compare-btn");
+  const n = pendingFriends.length;
+
+  btn.disabled = n === 0;
+  btn.textContent = n > 0 ? `Compare (${n})` : "Compare";
 }
 
 // ---------- Avatar Fetch ----------
@@ -729,3 +786,45 @@ async function getAvatar(username) {
     return null;
   }
 }
+
+document
+  .getElementById("compare-btn")
+  .addEventListener("click", async () => {
+    if (pendingFriends.length === 0) return;
+
+    const toFetch = [...pendingFriends];
+    const btn = document.getElementById("compare-btn");
+    btn.disabled = true;
+
+    const loading = document.getElementById("loading-screen");
+    document.getElementById("loading-text").textContent =
+      toFetch.length === 1
+        ? `Fetching ${toFetch[0]}'s films...`
+        : "Fetching films...";
+
+    loading.style.display = "flex";
+    updateLoading(10);
+    buildLoadingAvatars(toFetch);
+
+    await Promise.all(
+      toFetch.map(async (u, i) => {
+        const [films, avatar] = await Promise.all([
+          getUserFilms(u),
+          getAvatar(u)
+        ]);
+
+        userData[u] = { films, avatar };
+        setLoadingAvatar(i, avatar);
+      })
+    );
+
+    updateLoading(90);
+
+    pendingFriends = pendingFriends.filter(u => !toFetch.includes(u));
+
+    document.getElementById("users").innerHTML = renderUserChips();
+
+    recomputeAndRender();
+    finishLoading();
+    updateCompareButton();
+  });
