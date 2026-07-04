@@ -91,12 +91,34 @@ posters.forEach((poster) => {
     }
   }
 
+  // ---------- Liked (heart) ----------
+  // NOTE: Letterboxd marks a hearted film with a "liked"/"icon-liked"
+  // element inside .poster-viewingdata — if this stops matching, inspect
+  // a hearted film's markup on a /films/ page and adjust the selector.
+  const liked = !!gridItem?.querySelector(
+    ".poster-viewingdata .icon-liked, .poster-viewingdata .like"
+  );
+
+  // ---------- Review ----------
+  // NOTE: same caveat as above — Letterboxd shows a small review icon
+  // link inside .poster-viewingdata when the user wrote a review.
+  const reviewed = !!gridItem?.querySelector(
+    ".poster-viewingdata .icon-review, .poster-viewingdata [class*='review']"
+  );
+
+  const reviewUrl = reviewed
+    ? `https://letterboxd.com/${username}/film/${slug}/`
+    : null;
+
   movies.push({
     id,
     slug,
     title,
     poster: posterUrl,
-    rating
+    rating,
+    liked,
+    reviewed,
+    reviewUrl
   });
 });
 

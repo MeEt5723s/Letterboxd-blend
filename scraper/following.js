@@ -3,7 +3,7 @@
 // NOTE: based on Letterboxd's typical person-table markup — if this
 // comes back empty, the selectors below may need adjusting to match
 // the live page (inspect a .person-table row on /following/).
-async function getFollowing(username) {
+export async function getFollowing(username) {
   const people = [];
   const seen = new Set();
   let page = 1;
@@ -57,7 +57,10 @@ async function getFollowing(username) {
       const displayName = nameEl?.textContent.trim() || handle;
 
       const avatarImg = row.querySelector("img");
-      const avatar = avatarImg?.src || null;
+      const avatar =
+        avatarImg?.getAttribute("src") ||
+        avatarImg?.getAttribute("data-src") ||
+        null;
 
       people.push({ username: handle, displayName, avatar });
     });

@@ -5,21 +5,10 @@ const USER_COLORS = [
   "#b388ff", "#ffd740", "#ff5252", "#69f0ae"
 ];
 import { getUserFilms } from "../scraper/userFilms.js";
-import {
-  searchMovie,
-  getPoster,
-  getBackdrop,
-  getWatchProviders
-} from "../api/tmdb.js";
+import { getFollowing } from "../scraper/following.js";
+import { searchMovie, getBackdrop } from "../api/tmdb.js";
 import { buildPosterUrl, applyPosterFallback } from "../utils/posterUtils.js";
 
-(async () => {
-
-    const movie1 = await searchMovie("Interstellar");
-
-    const movie2 = await searchMovie("Interstellar");
-
-})();
 function colorFor(username) {
   const i = users.indexOf(username);
   return USER_COLORS[i % USER_COLORS.length];
@@ -270,11 +259,18 @@ function buildMovieMap() {
           id: f.id,
           slug: f.slug,
           title: f.title,
-          ratings: {}
+          ratings: {},
+          liked: {},
+          reviewUrl: {}
         });
       }
 
-      map.get(key).ratings[u] = f.rating;
+      const entry = map.get(key);
+
+      entry.ratings[u] = f.rating;
+
+      if (f.liked) entry.liked[u] = true;
+      if (f.reviewed && f.reviewUrl) entry.reviewUrl[u] = f.reviewUrl;
     });
   });
 
@@ -289,6 +285,18 @@ function ratedByEntries(movie) {
   return Object.entries(movie.ratings).filter(
     ([, rating]) => rating != null
   );
+}
+
+function likedBy(movie) {
+  return Object.keys(movie.liked || {});
+}
+
+// Watched-users first, then everyone else — used so preview/detail lists
+// surface the people who actually watched the film before padding out
+// with "not watched" entries.
+function orderedUsersForMovie(movie) {
+  const watchers = watchedBy(movie);
+  return [...watchers, ...users.filter(u => !watchers.includes(u))];
 }
 
 function getSharedMovies(movieMap, mode) {
@@ -475,6 +483,14 @@ const majorDisagreements = [...withSpread]
 renderInsights(biggestAgreements, "agreements");
 renderInsights(majorDisagreements, "disagreements");
 
+  // Loved across the group: liked by 2+ people. For a two-person blend
+  // that means both of them; for larger groups it's "at least two".
+  const lovedMovies = [...movieMap.values()]
+    .filter(m => likedBy(m).length >= 2)
+    .sort((a, b) => likedBy(b).length - likedBy(a).length);
+
+  renderInsights(lovedMovies, "loved");
+
   // Incomplete ratings: everyone watched, not everyone rated
   const incompleteRatings = [...movieMap.values()].filter(m => {
     const watched = watchedBy(m).length;
@@ -508,8 +524,44 @@ function notWatchedIcon() {
   </span>`;
 }
 
-function userRatingRows(movie) {
-  return users
+function watchedIcon() {
+  return `<span class="watched-icon" title="Watched, not yet rated">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" stroke-width="2" stroke-linecap="round"
+      stroke-linejoin="round">
+      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+      <circle cx="12" cy="12" r="3"></circle>
+    </svg>
+  </span>`;
+}
+
+function heartIcon() {
+  return `<span class="liked-icon" title="Liked">
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+      <path d="M12 21s-6.7-4.35-9.3-8.1C.8 10.1 1.4 6.6 4.4 5.1c2.2-1.1 4.6-.4 6 1.4a4.9 4.9 0 0 1 1.6 0c1.4-1.8 3.8-2.5 6-1.4 3 1.5 3.6 5 1.7 7.8C18.7 16.65 12 21 12 21z"></path>
+    </svg>
+  </span>`;
+}
+
+function reviewIcon() {
+  return `<svg width="12" height="12" viewBox="0 0 24 24" fill="none"
+    stroke="currentColor" stroke-width="2" stroke-linecap="round"
+    stroke-linejoin="round">
+    <path d="M12 20h9"></path>
+    <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"></path>
+  </svg>`;
+}
+
+// Preview rows used in card contexts (grid, insights). Shows up to
+// `limit` users (watchers first), then a "+n more" line so the card
+// doesn't grow unbounded for big groups — click the poster for the
+// full breakdown.
+function userRatingRows(movie, limit = 2) {
+  const ordered = orderedUsersForMovie(movie);
+  const shown = ordered.slice(0, limit);
+  const remaining = ordered.length - shown.length;
+
+  const rows = shown
     .map(u => {
       const watched = Object.prototype.hasOwnProperty.call(
         movie.ratings,
@@ -527,6 +579,51 @@ function userRatingRows(movie) {
       `;
     })
     .join("<br>");
+
+  const more =
+    remaining > 0
+      ? `<br><span class="ratings-more">+${remaining} more</span>`
+      : "";
+
+  return rows + more;
+}
+
+// Full per-user breakdown used in the movie detail modal: everyone
+// (watchers first), with a heart for likes and a link icon for reviews.
+function renderDetailRatings(movie) {
+  const ordered = orderedUsersForMovie(movie);
+
+  return ordered
+    .map(u => {
+      const watched = Object.prototype.hasOwnProperty.call(
+        movie.ratings,
+        u
+      );
+
+      const valueHtml = watched
+        ? formatRating(movie.ratings[u])
+        : notWatchedIcon();
+
+      const liked = movie.liked?.[u];
+      const reviewUrl = movie.reviewUrl?.[u];
+
+      return `
+        <div class="detail-rating-row" style="color:${colorFor(u)}">
+          <span class="detail-rating-user">
+            ${u}${liked ? ` ${heartIcon()}` : ""}
+          </span>
+          <span class="detail-rating-value">
+            ${valueHtml}
+            ${
+              reviewUrl
+                ? `<a href="${reviewUrl}" target="_blank" rel="noopener" class="review-link" title="Read review">${reviewIcon()}</a>`
+                : ""
+            }
+          </span>
+        </div>
+      `;
+    })
+    .join("");
 }
 
 function renderInsights(movies, containerId) {
@@ -566,6 +663,8 @@ ${
     const img = card.querySelector(".insight-poster");
     img.onerror = () =>
     applyPosterFallback(img, movie);
+
+    card.addEventListener("click", () => openMovieDetail(movie));
 
     container.appendChild(card);
   });
@@ -617,7 +716,11 @@ function renderIncompleteRatings(movies) {
     const div = document.createElement("div");
     div.className = "one-sided-film";
 
-    const rows = users
+    const limit = 2;
+    const shown = users.slice(0, limit);
+    const remaining = users.length - shown.length;
+
+    const rows = shown
       .map(u => {
         const rating = movie.ratings[u];
 
@@ -632,6 +735,11 @@ function renderIncompleteRatings(movies) {
       })
       .join("");
 
+    const more =
+      remaining > 0
+        ? `<div class="one-sided-rating-row ratings-more">+${remaining} more</div>`
+        : "";
+
     div.innerHTML = `
       <div class="one-sided-poster">
         <img src="${poster}">
@@ -641,13 +749,15 @@ function renderIncompleteRatings(movies) {
       </div>
 
       <div class="one-sided-ratings">
-        ${rows}
+        ${rows}${more}
       </div>
     `;
 
     const img = div.querySelector("img");
     img.onerror = () =>
     applyPosterFallback(img, movie);
+
+    div.addEventListener("click", () => openMovieDetail(movie));
 
     modalMovies.appendChild(div);
   });
@@ -718,7 +828,7 @@ function updateLoading(percent) {
 }
 
 function formatRating(rating) {
-  if (rating == null) return "—";
+  if (rating == null) return watchedIcon();
 
   const full = Math.floor(rating);
   const half = rating % 1 !== 0;
@@ -738,6 +848,12 @@ document
   .getElementById("disagreement-btn")
   .addEventListener("click", () => {
     document.getElementById("disagreements").classList.toggle("open");
+  });
+
+document
+  .getElementById("loved-btn")
+  .addEventListener("click", () => {
+    document.getElementById("loved").classList.toggle("open");
   });
 
 document
@@ -781,19 +897,6 @@ function letterboxdFilmUrl(slug) {
   return `https://letterboxd.com/film/${slug}/`;
 }
 
-// Best-effort region guess from the browser locale (e.g. "en-IN" -> "IN"),
-// falling back to "US" since that's where TMDB has the most provider data.
-function regionCode() {
-  const lang =
-    navigator.language ||
-    (navigator.languages && navigator.languages[0]) ||
-    "en-US";
-
-  const parts = lang.split("-");
-
-  return parts.length > 1 ? parts[1].toUpperCase() : "US";
-}
-
 function bindCloseMovieDetail() {
   const btn = document.getElementById("close-movie-detail");
 
@@ -820,15 +923,9 @@ async function openMovieDetail(movie) {
   const slugYear = yearMatch ? yearMatch[1] : "";
 
   let tmdbMovie = null;
-  let providers = null;
 
   try {
     tmdbMovie = await searchMovie(movie.title, slugYear);
-
-    if (tmdbMovie?.id) {
-      const results = await getWatchProviders(tmdbMovie.id);
-      providers = results[regionCode()] || results["US"] || null;
-    }
   } catch (e) {
     tmdbMovie = null;
   }
@@ -856,8 +953,10 @@ async function openMovieDetail(movie) {
     </div>
 
     <div class="movie-detail-body-inner">
-      <div class="watch-section-title">Where to Watch</div>
-      ${renderWatchProviders(providers)}
+      <div class="watch-section-title">Ratings &amp; Reviews</div>
+      <div class="detail-ratings-list">
+        ${renderDetailRatings(movie)}
+      </div>
 
       <div class="movie-detail-actions">
         <a
@@ -873,71 +972,6 @@ async function openMovieDetail(movie) {
   `;
 
   bindCloseMovieDetail();
-}
-
-function renderWatchProviders(providers) {
-  const fallback = `
-    <p class="no-providers">
-      No streaming info found for your region — check Letterboxd
-      for showtimes and availability.
-    </p>
-  `;
-
-  if (!providers) return fallback;
-
-  const groups = [
-    { key: "flatrate", label: "Stream" },
-    { key: "rent", label: "Rent" },
-    { key: "buy", label: "Buy" }
-  ];
-
-  const sections = groups
-    .map(g => {
-      const list = providers[g.key];
-      if (!list || !list.length) return "";
-
-      const chips = list
-        .map(
-          p => `
-            <a
-              class="provider-chip"
-              href="${providers.link || "https://www.justwatch.com/"}"
-              target="_blank"
-              rel="noopener"
-            >
-              ${
-                p.logo_path
-                  ? `<img src="https://image.tmdb.org/t/p/w92${p.logo_path}" alt="${p.provider_name}">`
-                  : ""
-              }
-              ${p.provider_name}
-            </a>
-          `
-        )
-        .join("");
-
-      return `
-        <div class="watch-group">
-          <div class="watch-group-label">${g.label}</div>
-          <div class="provider-row">${chips}</div>
-        </div>
-      `;
-    })
-    .join("");
-
-  if (!sections) return fallback;
-
-  return `
-    ${sections}
-    <div class="justwatch-attribution">
-      Streaming availability by
-      <a
-        href="${providers.link || "https://www.justwatch.com/"}"
-        target="_blank"
-        rel="noopener"
-      >JustWatch</a>
-    </div>
-  `;
 }
 
 // ---------- Shared Movies Mode Toggle ----------

@@ -504,6 +504,12 @@ body {
 .insight-poster-card {
   width: 160px;
   text-align: center;
+  cursor: pointer;
+  transition: transform .15s ease;
+}
+
+.insight-poster-card:hover {
+  transform: translateY(-3px);
 }
 
 .insight-poster {
@@ -740,6 +746,7 @@ body {
     margin-left:auto;
 }
 .one-sided-film {
+  cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -879,63 +886,66 @@ body {
   letter-spacing: .05em;
 }
 
-.watch-group {
-  margin-bottom: 18px;
-}
-
-.watch-group-label {
-  margin-bottom: 8px;
-  font-size: 13px;
-  color: #8fa3b0;
-}
-
-.provider-row {
+.detail-ratings-list {
   display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
+  flex-direction: column;
+  gap: 2px;
 }
 
-.provider-chip {
+.detail-rating-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 0;
+  border-bottom: 1px solid #262e36;
+  font-weight: 600;
+}
+
+.detail-rating-row:last-child {
+  border-bottom: none;
+}
+
+.detail-rating-user {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.detail-rating-value {
   display: flex;
   align-items: center;
   gap: 8px;
-  background: #14181c;
-  border-radius: 999px;
-  padding: 6px 14px 6px 6px;
-  color: #ccd;
-  font-size: 14px;
-  font-weight: 600;
+  color: #9ab;
+}
+
+.review-link {
+  display: inline-flex;
+  color: #9ab;
   text-decoration: none;
-  cursor: pointer;
   transition: .2s;
 }
 
-.provider-chip:hover {
-  background: #26303a;
+.review-link:hover {
   color: #fff;
 }
 
-.provider-chip img {
-  width: 26px;
-  height: 26px;
-  border-radius: 50%;
-  object-fit: cover;
+.watched-icon {
+  display: inline-flex;
+  vertical-align: -3px;
+  opacity: .7;
 }
 
-.no-providers {
+.liked-icon {
+  display: inline-flex;
+  vertical-align: -1px;
+  color: #ff4081;
+}
+
+.ratings-more {
+  display: block;
   color: #8fa3b0;
-  font-size: 14px;
-  line-height: 1.5;
-}
-
-.justwatch-attribution {
-  margin-top: 16px;
-  font-size: 12px;
-  color: #5c6b78;
-}
-
-.justwatch-attribution a {
-  color: #8fa3b0;
+  font-weight: 600;
+  font-size: 13px;
 }
 
 .movie-detail-actions {
