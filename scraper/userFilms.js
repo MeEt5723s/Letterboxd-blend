@@ -102,11 +102,23 @@ posters.forEach((poster) => {
   // ---------- Review ----------
   // NOTE: same caveat as above — Letterboxd shows a small review icon
   // link inside .poster-viewingdata when the user wrote a review.
-  const reviewed = !!gridItem?.querySelector(
+  const reviewEl = gridItem?.querySelector(
     ".poster-viewingdata .icon-review, .poster-viewingdata [class*='review']"
   );
 
-  const reviewUrl = reviewed
+  const reviewed = !!reviewEl;
+
+  // Prefer the actual href Letterboxd gives us for this specific log
+  // entry (important for rewatches — the generic /film/slug/ page only
+  // reflects the latest entry and can miss the one with the review).
+  const reviewAnchor =
+    reviewEl?.tagName === "A" ? reviewEl : reviewEl?.closest("a");
+
+  const reviewHref = reviewAnchor?.getAttribute("href") || null;
+
+  const reviewUrl = reviewHref
+    ? new URL(reviewHref, "https://letterboxd.com").href
+    : reviewed
     ? `https://letterboxd.com/${username}/film/${slug}/`
     : null;
 

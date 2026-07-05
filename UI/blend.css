@@ -273,6 +273,13 @@ body {
   margin-top: 0;
 }
 
+.empty-state {
+  color: #8fa3b0;
+  font-size: 14px;
+  line-height: 1.6;
+  max-width: 480px;
+}
+
 .shared-mode-toggle {
   display: flex;
   gap: 8px;
@@ -340,7 +347,8 @@ body {
   color: #00e054;
 }
 
-#movies-grid {
+#movies-grid,
+#watch-together-grid {
   display: grid;
   grid-template-columns:
     repeat(auto-fill, minmax(180px, 1fr));
@@ -361,6 +369,7 @@ body {
   aspect-ratio: 2 / 3;
   object-fit: cover;
   border-radius: 12px;
+  background: #232a31;
 }
 
 .title {
@@ -518,6 +527,7 @@ body {
   object-fit: cover;
   border-radius: 12px;
   margin-bottom: 10px;
+  background: #232a31;
 }
 
 .insight-ratings br {
@@ -807,6 +817,9 @@ body {
   width: 100%;
   border-radius: 12px;
   display: block;
+  background: #232a31;
+  aspect-ratio: 2/3;
+  object-fit: cover;
 }
 
 .one-sided-title {
@@ -918,15 +931,26 @@ body {
   color: #9ab;
 }
 
-.review-link {
-  display: inline-flex;
-  color: #9ab;
-  text-decoration: none;
-  transition: .2s;
+.detail-rating-block {
+  padding: 8px 0;
+  border-bottom: 1px solid #262e36;
 }
 
-.review-link:hover {
-  color: #fff;
+.detail-rating-block:last-child {
+  border-bottom: none;
+}
+
+.detail-rating-block .detail-rating-row {
+  border-bottom: none;
+  padding: 0;
+}
+
+.review-quote {
+  margin: 4px 0 0;
+  color: #9ab;
+  font-size: 14px;
+  line-height: 1.5;
+  white-space: pre-wrap;
 }
 
 .watched-icon {

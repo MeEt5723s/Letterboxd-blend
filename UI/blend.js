@@ -6,6 +6,8 @@ const USER_COLORS = [
 ];
 import { getUserFilms } from "../scraper/userFilms.js";
 import { getFollowing } from "../scraper/following.js";
+import { getWatchlist } from "../scraper/watchlist.js";
+import { getUserReview } from "../scraper/review.js";
 import { searchMovie, getBackdrop } from "../api/tmdb.js";
 import { buildPosterUrl, applyPosterFallback } from "../utils/posterUtils.js";
 
@@ -135,7 +137,17 @@ async function fetchUsersWithProgress(usernames) {
     }
   });
 
-  await Promise.all([...avatarWork, ...filmWork]);
+  const watchlistWork = usernames.map(async u => {
+    const watchlist = await getWatchlist(u);
+
+    if (userData[u]) {
+      userData[u].watchlist = watchlist;
+    } else {
+      userData[u] = { films: [], avatar: null, watchlist };
+    }
+  });
+
+  await Promise.all([...avatarWork, ...filmWork, ...watchlistWork]);
 }
 
 function buildLoadingAvatars(usernames) {
@@ -244,6 +256,38 @@ function finishLoading() {
 }
 
 // ---------- Data Aggregation ----------
+
+// Films on every user's watchlist — i.e. nobody's watched them yet,
+// but everyone wants to, so it's a solid pick for watching together.
+function computeCommonWatchlist() {
+  const map = new Map();
+
+  users.forEach(u => {
+    const list = userData[u]?.watchlist || [];
+
+    list.forEach(f => {
+      const key = f.id || f.slug;
+
+      if (!map.has(key)) {
+        map.set(key, {
+          id: f.id,
+          slug: f.slug,
+          title: f.title,
+          ratings: {},
+          liked: {},
+          reviewUrl: {},
+          watchlistedBy: new Set()
+        });
+      }
+
+      map.get(key).watchlistedBy.add(u);
+    });
+  });
+
+  return [...map.values()]
+    .filter(m => m.watchlistedBy.size === users.length)
+    .map(({ watchlistedBy, ...movie }) => movie);
+}
 
 function buildMovieMap() {
   const map = new Map();
@@ -491,6 +535,9 @@ renderInsights(majorDisagreements, "disagreements");
 
   renderInsights(lovedMovies, "loved");
 
+  const watchTogether = computeCommonWatchlist();
+  renderWatchTogether(watchTogether);
+
   // Incomplete ratings: everyone watched, not everyone rated
   const incompleteRatings = [...movieMap.values()].filter(m => {
     const watched = watchedBy(m).length;
@@ -543,21 +590,13 @@ function heartIcon() {
   </span>`;
 }
 
-function reviewIcon() {
-  return `<svg width="12" height="12" viewBox="0 0 24 24" fill="none"
-    stroke="currentColor" stroke-width="2" stroke-linecap="round"
-    stroke-linejoin="round">
-    <path d="M12 20h9"></path>
-    <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"></path>
-  </svg>`;
-}
-
 // Preview rows used in card contexts (grid, insights). Shows up to
 // `limit` users (watchers first), then a "+n more" line so the card
 // doesn't grow unbounded for big groups — click the poster for the
 // full breakdown.
-function userRatingRows(movie, limit = 2) {
+function userRatingRows(movie) {
   const ordered = orderedUsersForMovie(movie);
+  const limit = ordered.length <= 3 ? ordered.length : 2;
   const shown = ordered.slice(0, limit);
   const remaining = ordered.length - shown.length;
 
@@ -573,23 +612,26 @@ function userRatingRows(movie, limit = 2) {
         : notWatchedIcon();
 
       return `
-        <span style="color:${colorFor(u)}">
-          ${u}: ${valueHtml}
+        <span class="rating-row" style="color:${colorFor(u)}">
+          <span class="rating-row-user">${u}</span>
+          <span class="rating-row-value">${valueHtml}</span>
         </span>
       `;
     })
-    .join("<br>");
+    .join("");
 
   const more =
     remaining > 0
-      ? `<br><span class="ratings-more">+${remaining} more</span>`
+      ? `<span class="rating-row ratings-more">+${remaining} more</span>`
       : "";
 
   return rows + more;
 }
 
 // Full per-user breakdown used in the movie detail modal: everyone
-// (watchers first), with a heart for likes and a link icon for reviews.
+// (watchers first), with a heart for likes, and the review text (if
+// any) shown as a quoted line directly under the row — no click,
+// no separate box, loaded in automatically.
 function renderDetailRatings(movie) {
   const ordered = orderedUsersForMovie(movie);
 
@@ -608,22 +650,45 @@ function renderDetailRatings(movie) {
       const reviewUrl = movie.reviewUrl?.[u];
 
       return `
-        <div class="detail-rating-row" style="color:${colorFor(u)}">
-          <span class="detail-rating-user">
-            ${u}${liked ? ` ${heartIcon()}` : ""}
-          </span>
-          <span class="detail-rating-value">
-            ${valueHtml}
-            ${
-              reviewUrl
-                ? `<a href="${reviewUrl}" target="_blank" rel="noopener" class="review-link" title="Read review">${reviewIcon()}</a>`
-                : ""
-            }
-          </span>
+        <div class="detail-rating-block">
+          <div class="detail-rating-row" style="color:${colorFor(u)}">
+            <span class="detail-rating-user">
+              ${u}${liked ? ` ${heartIcon()}` : ""}
+            </span>
+            <span class="detail-rating-value">
+              ${valueHtml}
+            </span>
+          </div>
+          ${
+            reviewUrl
+              ? `<p class="review-quote" data-panel-for="${u}"></p>`
+              : ""
+          }
         </div>
       `;
     })
     .join("");
+}
+
+// Fetches every review for this movie in parallel and fills each quote
+// in as it arrives, so reviews are visible without any extra click.
+function loadDetailReviews(movie) {
+  const panels = movieDetailBody.querySelectorAll(".review-quote");
+
+  panels.forEach(panel => {
+    const username = panel.dataset.panelFor;
+
+    getUserReview(username, movie.slug, movie.reviewUrl?.[username]).then(
+      text => {
+        if (!text) {
+          panel.remove();
+          return;
+        }
+
+        panel.textContent = `"${text}"`;
+      }
+    );
+  });
 }
 
 function renderInsights(movies, containerId) {
@@ -706,6 +771,53 @@ function renderMovies(movies) {
   });
 }
 
+// Films on everyone's watchlist — a good pick for watching together
+// since nobody's seen it yet. Same card/click behavior as the shared
+// movies grid, just without a ratings line (nobody's rated it).
+function renderWatchTogether(movies) {
+  const grid = document.getElementById("watch-together-grid");
+  if (!grid) return;
+
+  grid.innerHTML = "";
+
+  if (!movies.length) {
+    grid.innerHTML = `
+      <p class="empty-state">
+        No overlap yet — add films to your Letterboxd watchlists and
+        they'll show up here once everyone's queued the same one up.
+      </p>
+    `;
+    return;
+  }
+
+  movies.forEach(movie => {
+    const poster = buildPosterUrl(movie.id, movie.slug);
+
+    const card = document.createElement("div");
+    card.className = "movie-card";
+
+    card.innerHTML = `
+      <img
+        src="${poster}"
+        alt="${movie.title}"
+        loading="lazy"
+      >
+
+      <p class="title">
+        ${movie.title}
+      </p>
+    `;
+
+    const img = card.querySelector("img");
+    img.onerror = () =>
+    applyPosterFallback(img, movie);
+
+    card.addEventListener("click", () => openMovieDetail(movie));
+
+    grid.appendChild(card);
+  });
+}
+
 function renderIncompleteRatings(movies) {
   const modalMovies = document.getElementById("modal-movies");
   modalMovies.innerHTML = "";
@@ -716,7 +828,7 @@ function renderIncompleteRatings(movies) {
     const div = document.createElement("div");
     div.className = "one-sided-film";
 
-    const limit = 2;
+    const limit = users.length <= 3 ? users.length : 2;
     const shown = users.slice(0, limit);
     const remaining = users.length - shown.length;
 
@@ -972,6 +1084,7 @@ async function openMovieDetail(movie) {
   `;
 
   bindCloseMovieDetail();
+  loadDetailReviews(movie);
 }
 
 // ---------- Shared Movies Mode Toggle ----------
