@@ -280,6 +280,52 @@ body {
   max-width: 480px;
 }
 
+.hidden {
+  display: none !important;
+}
+
+.movies-controls-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 16px 0 24px;
+}
+
+.movie-search-input {
+  flex: 1;
+  min-width: 220px;
+  background: #1c2228;
+  border: 1px solid #2a323a;
+  border-radius: 8px;
+  padding: 10px 14px;
+  color: #fff;
+  font-size: 14px;
+}
+
+.movie-search-input:focus {
+  outline: none;
+  border-color: #00e054;
+}
+
+.movie-search-input::placeholder {
+  color: #6b7c88;
+}
+
+.movie-sort-select {
+  background: #1c2228;
+  border: 1px solid #2a323a;
+  border-radius: 8px;
+  padding: 10px 14px;
+  color: #fff;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.movie-sort-select:focus {
+  outline: none;
+  border-color: #00e054;
+}
+
 .shared-mode-toggle {
   display: flex;
   gap: 8px;

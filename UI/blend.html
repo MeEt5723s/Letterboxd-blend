@@ -211,7 +211,26 @@
       </div>
     </div>
 
+    <div class="movies-controls-row">
+      <input
+        type="text"
+        id="movie-search-input"
+        class="movie-search-input"
+        placeholder="Search shared movies..."
+        autocomplete="off"
+      >
+
+      <select id="movie-sort-select" class="movie-sort-select">
+        <option value="default">Sort: Best Match</option>
+        <option value="title-asc">Title (A–Z)</option>
+        <option value="title-desc">Title (Z–A)</option>
+        <option value="year-desc">Year (Newest)</option>
+        <option value="year-asc">Year (Oldest)</option>
+      </select>
+    </div>
+
     <div id="movies-grid"></div>
+    <p id="movies-empty-state" class="empty-state hidden"></p>
   </section>
 
 </div>

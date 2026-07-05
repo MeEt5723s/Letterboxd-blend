@@ -58,6 +58,9 @@ function updateUrl() {
 let users = getUsersFromUrl();
 const userData = {}; // username -> { films, avatar }
 let sharedMode = "all"; // "all" | "any"
+let movieSearchQuery = "";
+let movieSortMode = "default";
+let lastSharedMovies = []; // base (agreement-sorted) list before search/sort applied
 
 // Loading-screen feedback timers (declared here, not near their
 // functions below, since the main IIFE further down calls
@@ -488,7 +491,8 @@ animateCompatibility(finalCompatibility);
     return s1 - s2;
   });
 
-  renderMovies(sortedShared);
+  lastSharedMovies = sortedShared;
+  renderFilteredSortedMovies();
 
   // Insights need 2+ raters on a movie within the "all" shared set
   const ratedMovies = [...movieMap.values()].filter(
@@ -734,6 +738,79 @@ ${
     container.appendChild(card);
   });
 }
+
+// The year in the slug is unreliable (Letterboxd only appends it there
+// to disambiguate a title collision, e.g. "dune-2021" vs "dune-1984"),
+// so most films never have one. The title's "(YYYY)" suffix is always
+// there — use that first and only fall back to the slug.
+function getMovieYear(movie) {
+  const titleMatch = movie.title?.match(/\((\d{4})\)\s*$/);
+  if (titleMatch) return parseInt(titleMatch[1], 10);
+
+  const slugMatch = movie.slug?.match(/-(\d{4})(?:-\d+)?$/);
+  return slugMatch ? parseInt(slugMatch[1], 10) : null;
+}
+
+function compareByYear(a, b, direction) {
+  const ay = getMovieYear(a);
+  const by = getMovieYear(b);
+
+  // Missing years sort to the end regardless of direction, and two
+  // missing years are equal — without this, subtracting two nulls
+  // produces NaN, which sort() effectively ignores (leaving the list
+  // looking unsorted instead of actually grouping unknowns last).
+  if (ay == null && by == null) return 0;
+  if (ay == null) return 1;
+  if (by == null) return -1;
+
+  return direction === "desc" ? by - ay : ay - by;
+}
+
+const MOVIE_SORTERS = {
+  "title-asc": (a, b) => a.title.localeCompare(b.title),
+  "title-desc": (a, b) => b.title.localeCompare(a.title),
+  "year-desc": (a, b) => compareByYear(a, b, "desc"),
+  "year-asc": (a, b) => compareByYear(a, b, "asc")
+};
+
+// Applies the current search query and sort mode on top of the base
+// (agreement-sorted) shared movies list, then re-renders the grid.
+function renderFilteredSortedMovies() {
+  const query = movieSearchQuery.trim().toLowerCase();
+
+  let list = query
+    ? lastSharedMovies.filter(m => m.title.toLowerCase().includes(query))
+    : [...lastSharedMovies];
+
+  const sorter = MOVIE_SORTERS[movieSortMode];
+  if (sorter) list = list.sort(sorter);
+
+  const emptyState = document.getElementById("movies-empty-state");
+  const grid = document.getElementById("movies-grid");
+
+  if (!list.length) {
+    grid.classList.add("hidden");
+    emptyState.classList.remove("hidden");
+    emptyState.textContent = query
+      ? `No shared movies match "${movieSearchQuery.trim()}".`
+      : "No shared movies yet.";
+  } else {
+    grid.classList.remove("hidden");
+    emptyState.classList.add("hidden");
+  }
+
+  renderMovies(list);
+}
+
+document.getElementById("movie-search-input").addEventListener("input", e => {
+  movieSearchQuery = e.target.value;
+  renderFilteredSortedMovies();
+});
+
+document.getElementById("movie-sort-select").addEventListener("change", e => {
+  movieSortMode = e.target.value;
+  renderFilteredSortedMovies();
+});
 
 function renderMovies(movies) {
   const grid = document.getElementById("movies-grid");
