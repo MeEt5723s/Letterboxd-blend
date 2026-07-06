@@ -66,6 +66,25 @@ body {
   color: #9ab;
 }
 
+#users .remove-chip-btn {
+  background: none;
+  border: none;
+  color: #9ab;
+  font-size: 14px;
+  line-height: 1;
+  margin-left: 6px;
+  padding: 2px;
+  cursor: pointer;
+  vertical-align: middle;
+  opacity: .6;
+  transition: opacity .15s, color .15s;
+}
+
+#users .remove-chip-btn:hover {
+  opacity: 1;
+  color: #ff5252;
+}
+
 .not-watched-icon {
   display: inline-flex;
   vertical-align: -3px;

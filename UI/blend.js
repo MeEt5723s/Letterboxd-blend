@@ -56,6 +56,9 @@ function updateUrl() {
 }
 
 let users = getUsersFromUrl();
+// The original owner (page loader), kept around even if they remove
+// themselves from the comparison — used e.g. to fetch "following" list.
+const ownerUsername = users[0];
 const userData = {}; // username -> { films, avatar }
 let sharedMode = "all"; // "all" | "any"
 let movieSearchQuery = "";
@@ -77,6 +80,11 @@ let pendingFriends = [];
 document.getElementById("users").innerHTML = renderUserChips();
 
 function renderUserChips() {
+  // Keep at least 2 people in the comparison — below that there's
+  // nothing left to "blend", so hide the remove button once we're
+  // down to the minimum.
+  const canRemove = users.length > 2;
+
   return users
     .map(u => {
       const pending = pendingFriends.includes(u);
@@ -85,10 +93,23 @@ function renderUserChips() {
         pending ? " pending-chip" : ""
       }" style="color:${colorFor(u)}">${u}${
         pending ? ' <small class="pending-label">(pending)</small>' : ""
+      }${
+        canRemove
+          ? `<button type="button" class="remove-chip-btn" data-username="${u}" title="Remove ${u} from comparison">✕</button>`
+          : ""
       }</span>`;
     })
     .join('<span class="user-sep"> × </span>');
 }
+
+// Delegated so it keeps working across every re-render of #users
+// (renderUserChips() replaces innerHTML each time).
+document.getElementById("users").addEventListener("click", e => {
+  const btn = e.target.closest(".remove-chip-btn");
+  if (!btn) return;
+
+  removeFriend(btn.dataset.username);
+});
 
 // ---------- Main Flow ----------
 
@@ -1197,7 +1218,7 @@ addFriendBtn.addEventListener("click", async () => {
   chooseFriendsModal.classList.add("open");
 
   if (followingCache === null) {
-    followingCache = await getFollowing(users[0]);
+    followingCache = await getFollowing(ownerUsername);
   }
 
   renderFollowingList();
@@ -1327,10 +1348,14 @@ async function addFriend(username) {
 //   recompute needed since they were never part of the rendered comparison.
 // - if they were already part of the comparison, recompute right away
 //   so the user never has to press Compare just to remove someone.
+// The owner (users[0]) can be removed too, so people can compare two
+// of their friends against each other without themselves in the mix —
+// as long as at least 2 people remain.
 async function removeFriend(username) {
   const idx = users.indexOf(username);
 
-  if (idx <= 0) return; // can't remove the owner (users[0]) or unknown user
+  if (idx === -1) return; // unknown user
+  if (users.length <= 2) return; // need at least 2 people to compare
 
   const wasPending = pendingFriends.includes(username);
 
