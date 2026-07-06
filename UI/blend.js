@@ -10,6 +10,15 @@ import { getWatchlist } from "../scraper/watchlist.js";
 import { getUserReview } from "../scraper/review.js";
 import { searchMovie, getBackdrop } from "../api/tmdb.js";
 import { buildPosterUrl, applyPosterFallback } from "../utils/posterUtils.js";
+import {
+  computeCommonWatchlist,
+  computePairwise,
+  computeRatingSimilarity,
+  computeSharedScore,
+  computeConfidence,
+  ratingSpread,
+  compareByYear
+} from "../engine/compatibility.js";
 
 function colorFor(username) {
   const i = users.indexOf(username);
@@ -281,38 +290,6 @@ function finishLoading() {
 
 // ---------- Data Aggregation ----------
 
-// Films on every user's watchlist — i.e. nobody's watched them yet,
-// but everyone wants to, so it's a solid pick for watching together.
-function computeCommonWatchlist() {
-  const map = new Map();
-
-  users.forEach(u => {
-    const list = userData[u]?.watchlist || [];
-
-    list.forEach(f => {
-      const key = f.id || f.slug;
-
-      if (!map.has(key)) {
-        map.set(key, {
-          id: f.id,
-          slug: f.slug,
-          title: f.title,
-          ratings: {},
-          liked: {},
-          reviewUrl: {},
-          watchlistedBy: new Set()
-        });
-      }
-
-      map.get(key).watchlistedBy.add(u);
-    });
-  });
-
-  return [...map.values()]
-    .filter(m => m.watchlistedBy.size === users.length)
-    .map(({ watchlistedBy, ...movie }) => movie);
-}
-
 function buildMovieMap() {
   const map = new Map();
 
@@ -375,72 +352,12 @@ function getSharedMovies(movieMap, mode) {
   );
 }
 
-function computePairwise(movieMap) {
-  const matrix = [];
 
-  for (let i = 0; i < users.length; i++) {
-    for (let j = i + 1; j < users.length; j++) {
-      const a = users[i];
-      const b = users[j];
-
-      const diffs = [];
-
-      movieMap.forEach(m => {
-        if (m.ratings[a] != null && m.ratings[b] != null) {
-          diffs.push(Math.abs(m.ratings[a] - m.ratings[b]));
-        }
-      });
-
-      const avgDiff =
-        diffs.length === 0
-          ? null
-          : diffs.reduce((s, d) => s + d, 0) / diffs.length;
-
-      const compatibility =
-  avgDiff == null
-    ? null
-    : computeCompatibility(avgDiff, diffs.length);
-
-      matrix.push({ a, b, avgDiff, compatibility, count: diffs.length });
-    }
-  }
-
-  return matrix;
-}
-
-function computeRatingSimilarity(avgDiff) {
-  if (avgDiff == null) return 0;
-  return Math.max(0, (1 - avgDiff / 4.5) * 100);
-}
-
-function computeSharedScore(sharedCount) {
-  // Saturates around 300 shared films
-  return Math.min(100, (sharedCount / 300) * 100);
-}
-
-function computeConfidence(sharedCount) {
-  return sharedCount / (sharedCount + 100);
-}
-
-function computeCompatibility(avgDiff, sharedCount) {
-
-  const ratingSimilarity = computeRatingSimilarity(avgDiff);
-
-  const sharedScore = computeSharedScore(sharedCount);
-
-  const confidence = computeConfidence(sharedCount);
-
-  const score =
-      ratingSimilarity * 0.60 +
-      sharedScore * 0.40;
-
-  return Math.round(score * confidence);
-}
 // ---------- Compute + Render ----------
 
 function recomputeAndRender() {
   const movieMap = buildMovieMap();
-  const pairwise = computePairwise(movieMap);
+  const pairwise = computePairwise(users, movieMap);
 
   const validPairs = pairwise.filter(p => p.compatibility != null);
 
@@ -560,7 +477,7 @@ renderInsights(majorDisagreements, "disagreements");
 
   renderInsights(lovedMovies, "loved");
 
-  const watchTogether = computeCommonWatchlist();
+  const watchTogether = computeCommonWatchlist(users, userData);
   renderWatchTogether(watchTogether);
 
   // Incomplete ratings: everyone watched, not everyone rated
@@ -575,13 +492,7 @@ renderInsights(majorDisagreements, "disagreements");
   renderPairwise(pairwise);
 }
 
-function ratingSpread(movie) {
-  const ratings = ratedByEntries(movie).map(([, r]) => r);
 
-  if (ratings.length < 2) return null;
-
-  return Math.max(...ratings) - Math.min(...ratings);
-}
 
 function notWatchedIcon() {
   return `<span class="not-watched-icon" title="Not watched">
@@ -760,32 +671,7 @@ ${
   });
 }
 
-// The year in the slug is unreliable (Letterboxd only appends it there
-// to disambiguate a title collision, e.g. "dune-2021" vs "dune-1984"),
-// so most films never have one. The title's "(YYYY)" suffix is always
-// there — use that first and only fall back to the slug.
-function getMovieYear(movie) {
-  const titleMatch = movie.title?.match(/\((\d{4})\)\s*$/);
-  if (titleMatch) return parseInt(titleMatch[1], 10);
 
-  const slugMatch = movie.slug?.match(/-(\d{4})(?:-\d+)?$/);
-  return slugMatch ? parseInt(slugMatch[1], 10) : null;
-}
-
-function compareByYear(a, b, direction) {
-  const ay = getMovieYear(a);
-  const by = getMovieYear(b);
-
-  // Missing years sort to the end regardless of direction, and two
-  // missing years are equal — without this, subtracting two nulls
-  // produces NaN, which sort() effectively ignores (leaving the list
-  // looking unsorted instead of actually grouping unknowns last).
-  if (ay == null && by == null) return 0;
-  if (ay == null) return 1;
-  if (by == null) return -1;
-
-  return direction === "desc" ? by - ay : ay - by;
-}
 
 const MOVIE_SORTERS = {
   "title-asc": (a, b) => a.title.localeCompare(b.title),
