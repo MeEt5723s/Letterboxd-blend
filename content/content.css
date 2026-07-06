@@ -1,10 +1,36 @@
+.lb-blend-navitem {
+    display: flex;
+    align-items: center;
+}
+
 #lb-blend-btn {
-    margin-left: 20px;
-    padding: 8px 16px;
-    border: none;
-    border-radius: 8px;
+    all: unset;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    box-sizing: border-box;
+
+    height: 38px;
+    padding: 0 22px;
+
+    margin-left: 16px;
+
     background: #00e054;
-    color: black;
-    font-weight: bold;
+    color: #14181c;
+
+    border-radius: 8px;
+
+    font-size: 15px;
+    font-weight: 700;
+    line-height: 1;
+
+    white-space: nowrap;
     cursor: pointer;
+
+    transition: background .15s ease;
+}
+
+#lb-blend-btn:hover {
+    background: #00c94c;
 }

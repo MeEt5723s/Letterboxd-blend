@@ -784,20 +784,44 @@ body {
     font-size:15px;
 }
 
-.manual-add-row button{
-    background:#00e054;
-    color:#14181c;
-    border:none;
-    border-radius:12px;
-    padding:0 24px;
-    font-weight:700;
-    cursor:pointer;
+.manual-add-row button,
+#compare-btn {
+    all: unset;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    box-sizing: border-box;
+
+    height: 38px;
+    padding: 0 22px;
+
+    background: #00e054;
+    color: #14181c;
+
+    border-radius: 8px;
+
+    font-size: 15px;
+    font-weight: 700;
+    line-height: 1;
+
+    white-space: nowrap;
+    cursor: pointer;
+
+    transition: background .15s ease;
 }
 
-.manual-add-row button:hover{
-    background:#00c948;
+.manual-add-row button:hover,
+#compare-btn:hover {
+    background: #00c94c;
 }
 
+.manual-add-row button:disabled,
+#compare-btn:disabled {
+    opacity: .45;
+    cursor: not-allowed;
+}
 #compare-btn{
     margin-left:auto;
 }

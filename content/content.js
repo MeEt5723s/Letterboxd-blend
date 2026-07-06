@@ -8,18 +8,19 @@ function addBlendButton() {
     if (document.getElementById("lb-blend-btn")) return;
 
     const li = document.createElement("li");
-    li.className = "navitem";
+    li.className = "navitem lb-blend-navitem";
 
     const button = document.createElement("a");
     button.id = "lb-blend-btn";
-    button.className = "navlink";
+    // NOTE: deliberately not using Letterboxd's own "navlink" class here —
+    // it carries padding/height rules that stack with ours and were
+    // exactly what made the button oversized and vertically off.
     button.href = "#";
     button.textContent = "🎬 Blend";
 
     li.appendChild(button);
     navList.appendChild(li);
 }
-
 addBlendButton();
 
 function getProfileUsername() {
