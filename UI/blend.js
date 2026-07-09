@@ -410,6 +410,15 @@ const finalCompatibility =
 
 animateCompatibility(finalCompatibility);
 
+  renderScoreBreakdown({
+    ratingSimilarity,
+    sharedScore,
+    confidence,
+    sharedCount,
+    avgDiff: overallAvgDiff,
+    finalCompatibility
+  });
+
   // Toggle visibility of shared-movie mode switch
   const modeToggle = document.getElementById("shared-mode-toggle");
   if (users.length > 2) {
@@ -890,6 +899,80 @@ function renderPairwise(matrix) {
   container.appendChild(grid);
 }
 
+// Renders a breakdown of how the overall compatibility score was
+// built: rating similarity (how close ratings are on shared films),
+// shared score (how much overlap there is), and confidence (how much
+// to trust that overlap given the sample size) — then shows how those
+// three combine into the final weighted, confidence-adjusted number.
+function renderScoreBreakdown({
+  ratingSimilarity,
+  sharedScore,
+  confidence,
+  sharedCount,
+  avgDiff,
+  finalCompatibility
+}) {
+  const container = document.getElementById("score-breakdown");
+  if (!container) return;
+
+  const confidencePct = Math.round(confidence * 100);
+  const weightedRaw = ratingSimilarity * 0.6 + sharedScore * 0.4;
+
+  const rows = [
+    {
+      label: "Rating Similarity",
+      value: ratingSimilarity,
+      weight: "60%",
+      detail: `Avg rating gap: ${avgDiff.toFixed(2)}★`
+    },
+    {
+      label: "Shared Score",
+      value: sharedScore,
+      weight: "40%",
+      detail: `${sharedCount} shared film${sharedCount === 1 ? "" : "s"} (caps at 300)`
+    }
+  ];
+
+  container.innerHTML = `
+    <div class="breakdown-rows">
+      ${rows
+        .map(
+          r => `
+        <div class="breakdown-row">
+          <div class="breakdown-row-head">
+            <span class="breakdown-label">${r.label} <small>(${r.weight})</small></span>
+            <span class="breakdown-value">${Math.round(r.value)}%</span>
+          </div>
+          <div class="breakdown-bar-track">
+            <div class="breakdown-bar-fill" style="width:${Math.min(100, Math.max(0, r.value))}%"></div>
+          </div>
+          <p class="breakdown-detail">${r.detail}</p>
+        </div>
+      `
+        )
+        .join("")}
+    </div>
+
+    <div class="breakdown-confidence">
+      <div class="breakdown-row-head">
+        <span class="breakdown-label">Confidence <small>(from shared films)</small></span>
+        <span class="breakdown-value">${confidencePct}%</span>
+      </div>
+      <div class="breakdown-bar-track confidence-track">
+        <div class="breakdown-bar-fill confidence-fill" style="width:${confidencePct}%"></div>
+      </div>
+      <p class="breakdown-detail">
+        More shared films = more confidence the score reflects real taste overlap, not a small sample.
+      </p>
+    </div>
+
+    <div class="breakdown-formula">
+      <span>(${Math.round(ratingSimilarity)}% × 0.6 + ${Math.round(sharedScore)}% × 0.4) × ${confidencePct}% confidence</span>
+      <span class="breakdown-equals">= ${finalCompatibility}%</span>
+    </div>
+  `;
+}
+
 function animateCompatibility(target) {
   const el = document.getElementById("compatibility-number");
   const circle = el.closest(".score-circle");
@@ -956,6 +1039,12 @@ document
   .getElementById("pairwise-btn")
   .addEventListener("click", () => {
     document.getElementById("pairwise").classList.toggle("open");
+  });
+
+document
+  .getElementById("breakdown-btn")
+  .addEventListener("click", () => {
+    document.getElementById("score-breakdown").classList.toggle("open");
   });
 
 const oneSidedBtn = document.getElementById("one-sided-btn");

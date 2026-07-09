@@ -2,7 +2,10 @@
 <html>
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Letterboxd Blend</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="blend.css">
 </head>
 
@@ -87,7 +90,8 @@
 <div class="container">
 
   <header class="header">
-    <h1>Letterboxd Blend</h1>
+    <h1>Letterboxd <span class="accent">Blend</span></h1>
+    <p class="header-tagline">Where your watchlists overlap, disagree, and occasionally fight about Kubrick.</p>
     <div id="users"></div>
 
     <div id="add-friend-area">
@@ -115,6 +119,18 @@
       <div class="stats-info">
         <h2 id="shared-count"></h2>
         <p id="avg-difference"></p>
+
+        <button
+          id="breakdown-btn"
+          class="toggle-btn"
+        >
+          📊 Score Breakdown
+        </button>
+
+        <div
+          id="score-breakdown"
+          class="hidden-section"
+        ></div>
 
         <button
           id="one-sided-btn"

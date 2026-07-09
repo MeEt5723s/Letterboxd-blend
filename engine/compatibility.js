@@ -43,8 +43,20 @@ export function computePairwise(users, movieMap) {
       const b = users[j];
 
       const diffs = [];
+      let watchedByBoth = 0;
 
       movieMap.forEach(m => {
+        // "Shared" is defined the same way the overall compatibility
+        // score defines it: both people watched the film, regardless
+        // of whether either left a star rating. Rating gaps (used for
+        // rating similarity) still only come from films both rated.
+        const aWatched = Object.prototype.hasOwnProperty.call(m.ratings, a);
+        const bWatched = Object.prototype.hasOwnProperty.call(m.ratings, b);
+
+        if (!aWatched || !bWatched) return;
+
+        watchedByBoth++;
+
         if (m.ratings[a] != null && m.ratings[b] != null) {
           diffs.push(Math.abs(m.ratings[a] - m.ratings[b]));
         }
@@ -58,9 +70,16 @@ export function computePairwise(users, movieMap) {
       const compatibility =
         avgDiff == null
           ? null
-          : computeCompatibility(avgDiff, diffs.length);
+          : computeCompatibility(avgDiff, watchedByBoth);
 
-      matrix.push({ a, b, avgDiff, compatibility, count: diffs.length });
+      matrix.push({
+        a,
+        b,
+        avgDiff,
+        compatibility,
+        count: watchedByBoth,
+        ratedCount: diffs.length
+      });
     }
   }
 
