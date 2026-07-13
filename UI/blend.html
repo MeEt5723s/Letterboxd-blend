@@ -11,15 +11,11 @@
 
 <body>
 <div id="one-sided-modal" class="modal">
-  <div class="modal-content">
+  <div class="modal-content insight-modal-content">
 
-    <button id="close-modal">
-      ✕
-    </button>
+    <h2 class="modal-heading" id="insight-modal-heading">Incomplete Ratings</h2>
 
-    <h2 class="modal-heading">Incomplete Ratings</h2>
-
-    <div id="modal-movies"></div>
+    <div id="modal-movies" class="insight-modal-grid"></div>
 
   </div>
 </div>
@@ -138,64 +134,39 @@
         >
           🎭 Incomplete Ratings
         </button>
-
-        <div
-          id="one-sided-section"
-          class="hidden-section"
-        ></div>
       </div>
 
     </section>
 
     <section class="insights-card">
 
-      <button
-        class="toggle-btn"
-        id="agreement-btn"
-      >
-        ❤️ Biggest Agreements
-      </button>
+      <div class="insight-tabs-grid">
 
-      <div
-        id="agreements"
-        class="hidden-section"
-      ></div>
+        <button type="button" class="insight-tab" id="agreement-btn">
+          <span class="insight-tab-icon insight-tab-icon--pink">❤️</span>
+          <span class="insight-tab-title">Biggest Agreements</span>
+          <span class="insight-tab-desc">Roll credits. Everyone applauded.</span>
+        </button>
 
-      <button
-        class="toggle-btn"
-        id="disagreement-btn"
-      >
-        ⚡ Major Disagreements
-      </button>
+        <button type="button" class="insight-tab" id="disagreement-btn">
+          <span class="insight-tab-icon insight-tab-icon--amber">⚡</span>
+          <span class="insight-tab-title">Major Disagreements</span>
+          <span class="insight-tab-desc">The audience was split.</span>
+        </button>
 
-      <div
-        id="disagreements"
-        class="hidden-section"
-      ></div>
+        <button type="button" class="insight-tab" id="loved-btn">
+          <span class="insight-tab-icon insight-tab-icon--green">✦</span>
+          <span class="insight-tab-title">Loved Across the Group</span>
+          <span class="insight-tab-desc">These earned a place on everyone's favourites list.</span>
+        </button>
 
-      <button
-        class="toggle-btn"
-        id="loved-btn"
-      >
-        💚 Loved Across the Group
-      </button>
+        <button type="button" class="insight-tab" id="pairwise-btn">
+          <span class="insight-tab-icon insight-tab-icon--blue">👥</span>
+          <span class="insight-tab-title">Pairwise Compatibility</span>
+          <span class="insight-tab-desc">Some duos were clearly watching the same movie.</span>
+        </button>
 
-      <div
-        id="loved"
-        class="hidden-section"
-      ></div>
-
-      <button
-        class="toggle-btn"
-        id="pairwise-btn"
-      >
-        👥 Pairwise Compatibility
-      </button>
-
-      <div
-        id="pairwise"
-        class="hidden-section"
-      ></div>
+      </div>
 
     </section>
 

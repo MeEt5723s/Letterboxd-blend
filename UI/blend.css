@@ -411,19 +411,6 @@ h1, h2, h3, h4 {
   margin-top: 18px;
 }
 
-/* Flex-laid accordions (poster grids inside insights) */
-#agreements.open,
-#disagreements.open,
-#loved.open {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 20px;
-}
-
-#pairwise.open {
-  display: block;
-}
-
 @keyframes fadeSlideIn {
   from { opacity: 0; transform: translateY(-6px); }
   to   { opacity: 1; transform: translateY(0); }
@@ -717,6 +704,73 @@ h1, h2, h3, h4 {
 }
 
 /* =========================================================
+   Insight tab cards (Biggest Agreements / Major Disagreements /
+   Loved Across the Group / Pairwise Compatibility) — each opens
+   the shared insight modal on click.
+   ========================================================= */
+.insight-tabs-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 18px;
+}
+
+.insight-tab {
+  all: unset;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 14px;
+  background: var(--ink-2);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-md);
+  padding: 30px 20px;
+  cursor: pointer;
+  transition: transform .2s var(--ease), border-color .2s var(--ease), background .2s var(--ease);
+}
+
+.insight-tab:hover {
+  transform: translateY(-4px);
+  border-color: rgba(255,255,255,.16);
+  background: #1b2229;
+}
+
+.insight-tab-icon {
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+}
+
+.insight-tab-icon--pink  { background: rgba(255,64,129,.16);  color: var(--pink); }
+.insight-tab-icon--amber { background: rgba(255,176,32,.16);  color: var(--amber); }
+.insight-tab-icon--green { background: rgba(0,224,84,.16);    color: var(--green); }
+.insight-tab-icon--blue  { background: rgba(64,188,244,.16);  color: var(--blue); }
+
+.insight-tab-title {
+  font-weight: 700;
+  font-size: 16px;
+  color: #fff;
+  font-family: "Bricolage Grotesque", "Inter", system-ui, sans-serif;
+}
+
+.insight-tab-desc {
+  font-size: 13px;
+  color: var(--text-dim);
+  line-height: 1.45;
+}
+
+@media (max-width: 560px) {
+  .insight-tabs-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* =========================================================
    Movie grids / cards
    ========================================================= */
 #movies-grid,
@@ -874,37 +928,9 @@ h1, h2, h3, h4 {
 }
 
 /* =========================================================
-   Insight poster cards (agreements / disagreements / loved)
+   Insight spread tag — shown on cards inside the insight modal
+   (Biggest Agreements / Major Disagreements / Loved Across the Group)
    ========================================================= */
-.insight-poster-card {
-  width: 170px;
-  text-align: left;
-  cursor: pointer;
-  transition: transform .2s var(--ease);
-}
-
-.insight-poster-card:hover {
-  transform: translateY(-5px);
-}
-
-.insight-poster {
-  width: 100%;
-  aspect-ratio: 2/3;
-  object-fit: cover;
-  border-radius: var(--radius-sm);
-  margin-bottom: 12px;
-  background: var(--panel-3);
-  box-shadow: var(--shadow-soft);
-}
-
-.insight-movie-title {
-  font-size: 14px;
-  font-weight: 600;
-  margin-top: 12px;
-  margin-bottom: 6px;
-  line-height: 1.35;
-}
-
 .insight-spread {
   font-size: 12px;
   font-weight: 700;
@@ -912,12 +938,6 @@ h1, h2, h3, h4 {
   margin-bottom: 8px;
   text-transform: uppercase;
   letter-spacing: .04em;
-}
-
-.insight-ratings {
-  margin-top: 4px;
-  font-size: 13px;
-  color: var(--text-dim);
 }
 
 /* =========================================================
@@ -955,16 +975,7 @@ h1, h2, h3, h4 {
 }
 
 .modal-content::before {
-  content: "";
-  display: block;
-  position: absolute;
-  top: 0; left: 0; right: 0;
-  height: 10px;
-  background-image: radial-gradient(circle at 10px 5px, var(--panel) 3.2px, transparent 3.6px);
-  background-size: 22px 10px;
-  background-repeat: repeat-x;
-  background-color: var(--green);
-  opacity: .85;
+  display: none;
 }
 
 @keyframes modalRise {
@@ -994,29 +1005,42 @@ h1, h2, h3, h4 {
   transform: rotate(90deg);
 }
 
-#close-modal {
-  float: right;
-  background: var(--panel-3);
-  border: 1px solid var(--line-soft);
-  color: white;
-  width: 38px;
-  height: 38px;
-  border-radius: 50%;
-  font-size: 18px;
-  cursor: pointer;
-  transition: .2s var(--ease);
-}
-
-#close-modal:hover {
-  background: #2a333c;
-  transform: rotate(90deg);
-}
-
 .modal-heading {
   margin: 6px 0 0;
   color: #fff;
   font-size: 30px;
   font-weight: 700;
+}
+
+/* =========================================================
+   Shared "insight" modal — used for Incomplete Ratings,
+   Biggest Agreements, Major Disagreements, Loved Across the
+   Group, and Pairwise Compatibility. Mirrors the Shared Movies
+   poster-grid card look, at least 6 posters per row.
+   ========================================================= */
+.insight-modal-content {
+  width: min(980px, 94vw);
+}
+
+.insight-modal-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 24px 18px;
+  margin-top: 24px;
+  max-height: 62vh;
+  overflow-y: auto;
+  padding: 4px 4px 8px;
+}
+
+.insight-modal-grid .movie-card .insight-spread {
+  margin: 8px 0 4px;
+}
+
+@media (max-width: 640px) {
+  .insight-modal-grid {
+    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+    gap: 18px 14px;
+  }
 }
 
 .modal-subtext {
@@ -1173,85 +1197,6 @@ h1, h2, h3, h4 {
 }
 
 #compare-btn { margin-left: auto; }
-
-/* =========================================================
-   One-sided (incomplete ratings) modal content
-   ========================================================= */
-.one-sided-film {
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-wrap: wrap;
-  gap: 36px;
-  margin-bottom: 44px;
-  padding-bottom: 44px;
-  border-bottom: 1px solid var(--line-soft);
-}
-
-.one-sided-film:last-child {
-  border-bottom: none;
-  margin-bottom: 0;
-  padding-bottom: 0;
-}
-
-.one-sided-user {
-  width: 170px;
-  text-align: center;
-}
-
-.one-sided-user h3 {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 700;
-  color: white;
-}
-
-.one-sided-user p {
-  margin: 10px 0 0;
-  font-size: 18px;
-  color: var(--text-dim);
-}
-
-.one-sided-ratings {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  min-width: 190px;
-}
-
-.one-sided-rating-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 24px;
-  background: var(--ink-2);
-  border: 1px solid var(--line-soft);
-  border-radius: var(--radius-sm);
-  padding: 10px 16px;
-}
-
-.one-sided-rating-row .one-sided-name { font-weight: 700; font-size: 14px; }
-.one-sided-rating-row .one-sided-value { font-size: 16px; color: var(--text-dim); }
-
-.one-sided-poster { width: 170px; }
-
-.one-sided-poster img {
-  width: 100%;
-  border-radius: var(--radius-sm);
-  display: block;
-  background: var(--panel-3);
-  aspect-ratio: 2/3;
-  object-fit: cover;
-  box-shadow: var(--shadow-soft);
-}
-
-.one-sided-title {
-  margin: 12px 0 0;
-  font-size: 18px;
-  font-weight: 700;
-  text-align: center;
-}
 
 /* =========================================================
    Movie detail modal
@@ -1480,7 +1425,6 @@ h1, h2, h3, h4 {
   .header h1 { font-size: 30px; }
   .modal-content { padding: 26px 20px; border-radius: 18px; }
   .movie-detail-title-wrap { left: 20px; right: 60px; }
-  .one-sided-film { gap: 22px; }
   #movies-grid, #watch-together-grid {
     grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
     gap: 18px;

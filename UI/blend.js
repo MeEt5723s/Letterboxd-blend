@@ -74,6 +74,15 @@ let movieSearchQuery = "";
 let movieSortMode = "default";
 let lastSharedMovies = []; // base (agreement-sorted) list before search/sort applied
 
+// Insight data, recomputed on every recomputeAndRender() but only rendered
+// into the shared insight modal lazily, when its corresponding tab is
+// clicked (or live-refreshed if that modal happens to already be open).
+let latestAgreements = [];
+let latestDisagreements = [];
+let latestLoved = [];
+let latestIncomplete = [];
+let latestPairwiseMatrix = [];
+
 // Loading-screen feedback timers (declared here, not near their
 // functions below, since the main IIFE further down calls
 // loadAllUsers() immediately and would otherwise hit these while
@@ -453,15 +462,11 @@ animateCompatibility(finalCompatibility);
   }))
   .filter(x => x.spread != null);
 
-const biggestAgreements = [...withSpread]
+const biggestAgreements = withSpread
+  .filter(x => x.spread === 0)
   .sort((a, b) => {
-    if (a.spread !== b.spread) {
-      return a.spread - b.spread;
-    }
-
     return ratedByEntries(b.movie).length - ratedByEntries(a.movie).length;
   })
-  .slice(0, 5)
   .map(x => x.movie);
 
 const majorDisagreements = [...withSpread]
@@ -475,8 +480,8 @@ const majorDisagreements = [...withSpread]
   })
   .map(x => x.movie);
 
-renderInsights(biggestAgreements, "agreements");
-renderInsights(majorDisagreements, "disagreements");
+latestAgreements = biggestAgreements;
+  latestDisagreements = majorDisagreements;
 
   // Loved across the group: liked by 2+ people. For a two-person blend
   // that means both of them; for larger groups it's "at least two".
@@ -484,7 +489,7 @@ renderInsights(majorDisagreements, "disagreements");
     .filter(m => likedBy(m).length >= 2)
     .sort((a, b) => likedBy(b).length - likedBy(a).length);
 
-  renderInsights(lovedMovies, "loved");
+  latestLoved = lovedMovies;
 
   const watchTogether = computeCommonWatchlist(users, userData);
   renderWatchTogether(watchTogether);
@@ -496,9 +501,10 @@ renderInsights(majorDisagreements, "disagreements");
     return watched === users.length && rated > 0 && rated < users.length;
   });
 
-  renderIncompleteRatings(incompleteRatings);
+  latestIncomplete = incompleteRatings;
+  latestPairwiseMatrix = pairwise;
 
-  renderPairwise(pairwise);
+  refreshOpenInsightModal();
 }
 
 
@@ -636,41 +642,50 @@ function loadDetailReviews(movie) {
   });
 }
 
-function renderInsights(movies, containerId) {
-  const container = document.getElementById(containerId);
+// Generic poster-grid renderer used inside the shared insight modal
+// (Incomplete Ratings / Biggest Agreements / Major Disagreements /
+// Loved Across the Group). Cards use the exact same look as the
+// Shared Movies grid so all of these feel like one consistent modal.
+function renderPosterGrid(container, movies, { showSpread = false, emptyText = "Nothing here yet." } = {}) {
   container.innerHTML = "";
+
+  if (!movies.length) {
+    container.innerHTML = `<p class="empty-state">${emptyText}</p>`;
+    return;
+  }
 
   movies.forEach(movie => {
     const poster = buildPosterUrl(movie.id, movie.slug);
-    const spread = ratingSpread(movie);
+    const spread = showSpread ? ratingSpread(movie) : null;
+
     const card = document.createElement("div");
-    card.className = "insight-poster-card";
+    card.className = "movie-card";
 
     card.innerHTML = `
       <img
         src="${poster}"
         alt="${movie.title}"
-        class="insight-poster"
+        loading="lazy"
       >
 
-      <div class="insight-movie-title">
-    ${movie.title}
-</div>
+      <p class="title">
+        ${movie.title}
+      </p>
 
-${
-    spread != null
-        ? `<div class="insight-spread">
-            ${spread}★ difference
-           </div>`
-        : ""
-}
+      ${
+        spread != null
+          ? `<div class="insight-spread">${
+              spread === 0 ? "Same rating" : `${spread}★ difference`
+            }</div>`
+          : ""
+      }
 
-      <div class="insight-ratings">
+      <p class="ratings">
         ${userRatingRows(movie)}
-      </div>
+      </p>
     `;
 
-    const img = card.querySelector(".insight-poster");
+    const img = card.querySelector("img");
     img.onerror = () =>
     applyPosterFallback(img, movie);
 
@@ -811,65 +826,7 @@ function renderWatchTogether(movies) {
   });
 }
 
-function renderIncompleteRatings(movies) {
-  const modalMovies = document.getElementById("modal-movies");
-  modalMovies.innerHTML = "";
-
-  movies.forEach(movie => {
-    const poster = buildPosterUrl(movie.id, movie.slug);
-
-    const div = document.createElement("div");
-    div.className = "one-sided-film";
-
-    const limit = users.length <= 3 ? users.length : 2;
-    const shown = users.slice(0, limit);
-    const remaining = users.length - shown.length;
-
-    const rows = shown
-      .map(u => {
-        const rating = movie.ratings[u];
-
-        return `
-          <div class="one-sided-rating-row">
-            <span class="one-sided-name" style="color:${colorFor(
-              u
-            )}">${u}</span>
-            <span class="one-sided-value">${formatRating(rating)}</span>
-          </div>
-        `;
-      })
-      .join("");
-
-    const more =
-      remaining > 0
-        ? `<div class="one-sided-rating-row ratings-more">+${remaining} more</div>`
-        : "";
-
-    div.innerHTML = `
-      <div class="one-sided-poster">
-        <img src="${poster}">
-        <div class="one-sided-title">
-          ${movie.title}
-        </div>
-      </div>
-
-      <div class="one-sided-ratings">
-        ${rows}${more}
-      </div>
-    `;
-
-    const img = div.querySelector("img");
-    img.onerror = () =>
-    applyPosterFallback(img, movie);
-
-    div.addEventListener("click", () => openMovieDetail(movie));
-
-    modalMovies.appendChild(div);
-  });
-}
-
-function renderPairwise(matrix) {
-  const container = document.getElementById("pairwise");
+function renderPairwiseInto(container, matrix) {
   container.innerHTML = "";
 
   if (users.length < 2) return;
@@ -1018,54 +975,110 @@ function formatRating(rating) {
 // ---------- Toggle Buttons ----------
 
 document
-  .getElementById("agreement-btn")
-  .addEventListener("click", () => {
-    document.getElementById("agreements").classList.toggle("open");
-  });
-
-document
-  .getElementById("disagreement-btn")
-  .addEventListener("click", () => {
-    document.getElementById("disagreements").classList.toggle("open");
-  });
-
-document
-  .getElementById("loved-btn")
-  .addEventListener("click", () => {
-    document.getElementById("loved").classList.toggle("open");
-  });
-
-document
-  .getElementById("pairwise-btn")
-  .addEventListener("click", () => {
-    document.getElementById("pairwise").classList.toggle("open");
-  });
-
-document
   .getElementById("breakdown-btn")
   .addEventListener("click", () => {
     document.getElementById("score-breakdown").classList.toggle("open");
   });
 
+// ---------- Shared Insight Modal ----------
+// Biggest Agreements, Major Disagreements, Loved Across the Group,
+// Pairwise Compatibility, and Incomplete Ratings all open this one
+// modal — styled just like the Shared Movies grid — with whichever
+// content matches the tab that was clicked.
+
+const insightModal = document.getElementById("one-sided-modal");
+const insightModalBody = document.getElementById("modal-movies");
+const insightModalHeading = document.getElementById("insight-modal-heading");
+let currentInsightType = null;
+
+const INSIGHT_TABS = {
+  incomplete: {
+    heading: "Incomplete Ratings",
+    render: () =>
+      renderPosterGrid(insightModalBody, latestIncomplete, {
+        emptyText: "No incomplete ratings — everyone's fully rated what they've watched."
+      })
+  },
+  agreements: {
+    heading: "Biggest Agreements",
+    render: () =>
+      renderPosterGrid(insightModalBody, latestAgreements, {
+        showSpread: true,
+        emptyText: "No unanimous ratings yet."
+      })
+  },
+  disagreements: {
+    heading: "Major Disagreements",
+    render: () =>
+      renderPosterGrid(insightModalBody, latestDisagreements, {
+        showSpread: true,
+        emptyText: "No major disagreements yet."
+      })
+  },
+  loved: {
+    heading: "Loved Across the Group",
+    render: () =>
+      renderPosterGrid(insightModalBody, latestLoved, {
+        showSpread: true,
+        emptyText: "Nothing loved by the whole group yet."
+      })
+  },
+  pairwise: {
+    heading: "Pairwise Compatibility",
+    render: () => renderPairwiseInto(insightModalBody, latestPairwiseMatrix)
+  }
+};
+
+function renderInsightModalContent() {
+  const tab = INSIGHT_TABS[currentInsightType];
+  if (!tab) return;
+
+  insightModalHeading.textContent = tab.heading;
+  insightModalBody.className = "insight-modal-grid";
+  tab.render();
+}
+
+// Keeps the modal's content in sync if a recompute happens while it's
+// still open (e.g. friends added/removed, shared mode toggled).
+function refreshOpenInsightModal() {
+  if (currentInsightType && insightModal.classList.contains("open")) {
+    renderInsightModalContent();
+  }
+}
+
+function openInsightModal(type) {
+  currentInsightType = type;
+  renderInsightModalContent();
+  insightModal.classList.add("open");
+}
+
+document
+  .getElementById("agreement-btn")
+  .addEventListener("click", () => openInsightModal("agreements"));
+
+document
+  .getElementById("disagreement-btn")
+  .addEventListener("click", () => openInsightModal("disagreements"));
+
+document
+  .getElementById("loved-btn")
+  .addEventListener("click", () => openInsightModal("loved"));
+
+document
+  .getElementById("pairwise-btn")
+  .addEventListener("click", () => openInsightModal("pairwise"));
+
 const oneSidedBtn = document.getElementById("one-sided-btn");
 
 if (oneSidedBtn) {
-  oneSidedBtn.addEventListener("click", () => {
-    document.getElementById("one-sided-modal").classList.add("open");
-  });
+  oneSidedBtn.addEventListener("click", () => openInsightModal("incomplete"));
 }
 
-document.getElementById("close-modal").addEventListener("click", () => {
-  document.getElementById("one-sided-modal").classList.remove("open");
+insightModal.addEventListener("click", e => {
+  if (e.target.id === "one-sided-modal") {
+    e.currentTarget.classList.remove("open");
+  }
 });
-
-document
-  .getElementById("one-sided-modal")
-  .addEventListener("click", e => {
-    if (e.target.id === "one-sided-modal") {
-      e.currentTarget.classList.remove("open");
-    }
-  });
 
 // ---------- Movie Detail Modal ----------
 
