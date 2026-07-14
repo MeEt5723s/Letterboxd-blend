@@ -9,7 +9,7 @@ import { getFollowing } from "../scraper/following.js";
 import { getWatchlist } from "../scraper/watchlist.js";
 import { getUserReview } from "../scraper/review.js";
 import { searchMovie, getBackdrop } from "../api/tmdb.js";
-import { buildPosterUrl, applyPosterFallback } from "../utils/posterUtils.js";
+import { setPosterWithFallback } from "../utils/posterUtils.js";
 import {
   computeCommonWatchlist,
   computePairwise,
@@ -655,7 +655,6 @@ function renderPosterGrid(container, movies, { showSpread = false, emptyText = "
   }
 
   movies.forEach(movie => {
-    const poster = buildPosterUrl(movie.id, movie.slug);
     const spread = showSpread ? ratingSpread(movie) : null;
 
     const card = document.createElement("div");
@@ -663,7 +662,6 @@ function renderPosterGrid(container, movies, { showSpread = false, emptyText = "
 
     card.innerHTML = `
       <img
-        src="${poster}"
         alt="${movie.title}"
         loading="lazy"
       >
@@ -686,8 +684,7 @@ function renderPosterGrid(container, movies, { showSpread = false, emptyText = "
     `;
 
     const img = card.querySelector("img");
-    img.onerror = () =>
-    applyPosterFallback(img, movie);
+    setPosterWithFallback(img, movie);
 
     card.addEventListener("click", () => openMovieDetail(movie));
 
@@ -748,14 +745,11 @@ function renderMovies(movies) {
   grid.innerHTML = "";
 
   movies.forEach(movie => {
-    const poster = buildPosterUrl(movie.id, movie.slug);
-
     const card = document.createElement("div");
     card.className = "movie-card";
 
     card.innerHTML = `
       <img
-        src="${poster}"
         alt="${movie.title}"
         loading="lazy"
       >
@@ -770,8 +764,7 @@ function renderMovies(movies) {
     `;
 
     const img = card.querySelector("img");
-    img.onerror = () =>
-    applyPosterFallback(img, movie);
+    setPosterWithFallback(img, movie);
 
     card.addEventListener("click", () => openMovieDetail(movie));
 
@@ -799,14 +792,11 @@ function renderWatchTogether(movies) {
   }
 
   movies.forEach(movie => {
-    const poster = buildPosterUrl(movie.id, movie.slug);
-
     const card = document.createElement("div");
     card.className = "movie-card";
 
     card.innerHTML = `
       <img
-        src="${poster}"
         alt="${movie.title}"
         loading="lazy"
       >
@@ -817,8 +807,7 @@ function renderWatchTogether(movies) {
     `;
 
     const img = card.querySelector("img");
-    img.onerror = () =>
-    applyPosterFallback(img, movie);
+    setPosterWithFallback(img, movie);
 
     card.addEventListener("click", () => openMovieDetail(movie));
 
@@ -1372,13 +1361,10 @@ function updateCompareButton() {
 
 async function getAvatar(username) {
   try {
-    const response = await fetch(`https://letterboxd.com/${username}/`);
-    const html = await response.text();
-
-    const doc = new DOMParser().parseFromString(html, "text/html");
-    const img = doc.querySelector(".profile-avatar img");
-
-    return img?.src || null;
+    const response = await fetch(`http://localhost:8000/users/${encodeURIComponent(username)}/avatar`);
+    if (!response.ok) return null;
+    const data = await response.json();
+    return data.avatar || null;
   } catch {
     return null;
   }
