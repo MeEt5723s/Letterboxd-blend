@@ -674,6 +674,18 @@ h1, h2, h3, h4 {
   gap: 14px;
 }
 
+/* When the pairwise grid is rendered inside the shared insight modal
+   (.insight-modal-grid), it ends up as the ONLY item in that outer
+   grid. Without this rule it only occupies a single implicit column
+   track of the parent (auto-fill, minmax(120px, 1fr)) — squeezing
+   itself down to one narrow column, which then leaves no room for
+   its own internal grid-template-columns to do anything but stack
+   everything in a single column too. Spanning all parent columns
+   restores its full width so its own multi-column layout can work. */
+.insight-modal-grid > .pairwise-grid {
+  grid-column: 1 / -1;
+}
+
 .pairwise-row {
   display: flex;
   justify-content: space-between;

@@ -1,5 +1,6 @@
 import os
 import re
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from typing import Optional, List, Dict, Any
@@ -19,6 +20,16 @@ from scraper import (
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Caps how many outbound TMDB requests are in flight at once. Without this,
+# a page with N missing posters fires N simultaneous searches, each of
+# which used to open its own brand-new httpx.AsyncClient (and therefore
+# its own fresh TCP/TLS connection) - under enough concurrency that blew
+# through local connection/port limits and surfaced as bare ConnectErrors.
+# Now that we share one pooled client (see lifespan below), this semaphore
+# just keeps the burst reasonable rather than firing everything at once.
+TMDB_FETCH_CONCURRENCY = 8
+_TMDB_SEM = asyncio.Semaphore(TMDB_FETCH_CONCURRENCY)
 
 def pick_best_match(results: List[Dict[str, Any]], title: str, year: str = "") -> Optional[Dict[str, Any]]:
     def normalize(s):
@@ -46,8 +57,19 @@ def pick_best_match(results: List[Dict[str, Any]], title: str, year: str = "") -
 async def lifespan(app: FastAPI):
     # Startup: connect to Redis cache
     await cache.connect()
+
+    # Create ONE shared, connection-pooled httpx client for all outbound
+    # TMDB calls, instead of opening a brand new client (and therefore a
+    # brand new TCP/TLS connection) on every single search request. This
+    # is what was causing ConnectErrors under concurrent poster loads -
+    # too many simultaneous fresh connections to the same host.
+    limits = httpx.Limits(max_connections=20, max_keepalive_connections=10)
+    app.state.tmdb_client = httpx.AsyncClient(timeout=15, limits=limits)
+
     yield
-    # Shutdown: any cleanup if needed
+
+    # Shutdown: close the pooled client cleanly
+    await app.state.tmdb_client.aclose()
 
 app = FastAPI(title="Letterboxd Blend Provider API", lifespan=lifespan)
 
@@ -167,12 +189,26 @@ async def tmdb_search(title: str, year: str = ""):
     if year:
         params["year"] = year
 
-    try:
-        async with httpx.AsyncClient(timeout=15) as client:
-            response = await client.get(url, params=params)
-    except httpx.RequestError as exc:
-        logger.error(f"TMDB network error for '{clean_title}' ({year}): {exc!r}")
-        raise HTTPException(status_code=502, detail=f"TMDB request failed (network error): {exc}")
+    client = app.state.tmdb_client
+    retries = 3
+    backoff = 0.5
+    response = None
+    for attempt in range(retries):
+        try:
+            async with _TMDB_SEM:
+                response = await client.get(url, params=params)
+            break
+        except httpx.RequestError as exc:
+            if attempt < retries - 1:
+                logger.warning(
+                    f"TMDB network error for '{clean_title}' ({year}) "
+                    f"(attempt {attempt + 1}/{retries}): {exc!r}, retrying in {backoff:.1f}s"
+                )
+                await asyncio.sleep(backoff)
+                backoff *= 2
+                continue
+            logger.error(f"TMDB network error for '{clean_title}' ({year}): {exc!r}")
+            raise HTTPException(status_code=502, detail=f"TMDB request failed (network error): {exc}")
 
     if response.status_code != 200:
         body_snippet = response.text[:300]

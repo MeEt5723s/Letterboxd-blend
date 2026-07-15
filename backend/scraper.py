@@ -157,6 +157,35 @@ async def _fetch_all_pages(
     return [first_html] + list(results)
 
 
+def _extract_poster_url(img) -> str:
+    """
+    Pull the real poster URL off a Letterboxd <img> tag, skipping over
+    Letterboxd's own placeholder image. Letterboxd sometimes serves
+    "empty-poster-XX.png" as the `src` (a real, normally-sized image
+    that loads successfully - not a 404, not a tiny pixel), which means
+    it slips past both onerror and a naturalWidth check on the frontend.
+    Filtering it out here means `movie.poster` is genuinely empty
+    whenever that's all we got, so the frontend's fallback chain
+    (buildPosterUrl -> TMDB) actually gets a chance to run.
+    """
+    if not img:
+        return ""
+
+    for attr in ("src", "data-src"):
+        val = img.attributes.get(attr)
+        if val and "empty-poster" not in val:
+            return val
+
+    for attr in ("srcset", "data-srcset"):
+        val = img.attributes.get(attr)
+        if val:
+            first = val.split(" ")[0].strip()
+            if first and "empty-poster" not in first:
+                return first
+
+    return ""
+
+
 def _parse_films_page(html: str) -> List[Dict[str, Any]]:
     movies = []
     tree = HTMLParser(html)
@@ -167,9 +196,7 @@ def _parse_films_page(html: str) -> List[Dict[str, Any]]:
         title = poster.attributes.get("data-item-name") or slug
 
         img = poster.css_first(".poster img")
-        poster_url = ""
-        if img:
-            poster_url = img.attributes.get("src") or (img.attributes.get("srcset") or "").split(" ")[0] or ""
+        poster_url = _extract_poster_url(img)
 
         movie_id = None
         postered_identifier_str = poster.attributes.get("data-postered-identifier")
@@ -242,9 +269,7 @@ def _parse_watchlist_page(html: str) -> List[Dict[str, Any]]:
         title = poster.attributes.get("data-item-name") or slug
 
         img = poster.css_first(".poster img")
-        poster_url = ""
-        if img:
-            poster_url = img.attributes.get("src") or (img.attributes.get("srcset") or "").split(" ")[0] or ""
+        poster_url = _extract_poster_url(img)
 
         movie_id = None
         postered_identifier_str = poster.attributes.get("data-postered-identifier")

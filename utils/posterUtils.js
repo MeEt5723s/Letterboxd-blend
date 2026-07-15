@@ -68,16 +68,34 @@ export async function applyPosterFallback(img, movie) {
  *    never fires) but nothing visible is shown. We catch this by
  *    checking naturalWidth once the image loads.
  */
+// Letterboxd sometimes serves this static placeholder as if it were the
+// actual poster - it's a real, normally-sized image (so a tiny-pixel
+// check alone won't catch it), it just isn't the movie's poster.
+const LETTERBOXD_PLACEHOLDER_HINT = "empty-poster";
+
+function isUsableScrapedPoster(src) {
+    return !!src && !src.includes(LETTERBOXD_PLACEHOLDER_HINT);
+}
+
 export function setPosterWithFallback(img, movie) {
-    const primarySrc = movie.poster || buildPosterUrl(movie.id, movie.slug);
+    // Prefer the scraped poster only if it isn't Letterboxd's own
+    // placeholder image; otherwise go straight to our own deterministic
+    // CDN URL built from id + slug, which is far more reliable than
+    // trusting whatever the scrape happened to pick up.
+    const scrapedSrc = isUsableScrapedPoster(movie.poster) ? movie.poster : "";
+    const primarySrc = scrapedSrc || buildPosterUrl(movie.id, movie.slug);
 
     img.onerror = () => applyPosterFallback(img, movie);
 
     img.onload = () => {
-        // A real poster should never be this small. Anything at or below
-        // a couple of pixels wide is almost certainly a lazy-load
-        // placeholder or tracking pixel, not an actual poster.
-        if (img.naturalWidth <= 2) {
+        const loadedSrc = img.currentSrc || img.src;
+
+        // Anything at or below a few pixels wide is almost certainly a
+        // lazy-load placeholder or tracking pixel, not an actual poster.
+        // We also re-check the loaded URL itself, in case a redirect or
+        // CDN fallback landed on Letterboxd's placeholder image, which
+        // is a normal size and wouldn't be caught by naturalWidth alone.
+        if (img.naturalWidth <= 4 || loadedSrc.includes(LETTERBOXD_PLACEHOLDER_HINT)) {
             applyPosterFallback(img, movie);
         }
     };
