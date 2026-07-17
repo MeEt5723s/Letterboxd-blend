@@ -30,6 +30,18 @@ export async function searchMovie(title, year = "") {
     return movie;
 }
 
+export async function fetchLetterboxdBackdrop(slug) {
+    if (!slug) return null;
+
+    const url = `${API_BASE_URL}/films/${encodeURIComponent(slug)}/backdrop`;
+    const response = await fetch(url);
+    if (!response.ok) {
+        throw new Error(`Backdrop request failed (${response.status})`);
+    }
+    const data = await response.json();
+    return data.backdrop || null;
+}
+
 export function getPoster(path) {
     if (!path)
         return "images/noPoster.png";

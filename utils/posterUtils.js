@@ -1,4 +1,4 @@
-import { searchMovie, getPoster } from "../api/tmdb.js";
+import { searchMovie, getPoster, getBackdrop, fetchLetterboxdBackdrop } from "../api/tmdb.js";
 
 export function buildPosterUrl(id, slug) {
 
@@ -107,4 +107,59 @@ export function setPosterWithFallback(img, movie) {
     }
 
     img.src = primarySrc;
+}
+
+/**
+ * Same letterboxd-first / tmdb-fallback shape as setPosterWithFallback,
+ * but for backdrops. Unlike the poster, there's no deterministic CDN URL
+ * we can build from id+slug alone - the letterboxd backdrop has to be
+ * scraped from the film page (see /films/{slug}/backdrop on the API),
+ * so this path is async all the way through rather than "set src and
+ * let onerror handle it".
+ */
+export async function applyBackdropFallback(img, movie) {
+    img.onerror = null;
+    img.onload = null;
+
+    try {
+        const yearMatch = movie.slug?.match(/-(\d{4})(?:-\d+)?$/);
+        const year = yearMatch ? yearMatch[1] : "";
+
+        const tmdbMovie = await searchMovie(movie.title, year);
+        if (tmdbMovie?.backdrop_path) {
+            img.src = getBackdrop(tmdbMovie.backdrop_path);
+        } else {
+            // No letterboxd backdrop and no TMDB backdrop either - hide
+            // rather than show a broken image.
+            img.removeAttribute("src");
+            img.style.display = "none";
+        }
+    } catch (e) {
+        console.error(e);
+        img.removeAttribute("src");
+        img.style.display = "none";
+    }
+}
+
+export async function setBackdropWithFallback(img, movie) {
+    img.onerror = () => applyBackdropFallback(img, movie);
+    img.onload = () => {
+        if (img.naturalWidth <= 4) {
+            applyBackdropFallback(img, movie);
+        }
+    };
+
+    // Try the scraped Letterboxd backdrop first.
+    try {
+        const letterboxdBackdrop = await fetchLetterboxdBackdrop(movie.slug);
+        if (letterboxdBackdrop) {
+            img.src = letterboxdBackdrop;
+            return;
+        }
+    } catch (e) {
+        console.error(e);
+    }
+
+    // Letterboxd has nothing (or the request failed) - fall back to TMDB.
+    await applyBackdropFallback(img, movie);
 }

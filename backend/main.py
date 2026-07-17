@@ -15,7 +15,10 @@ from scraper import (
     scrape_following,
     scrape_avatar,
     scrape_review,
+    scrape_backdrop,
     ScrapeBlockedError,
+    init_scraper_client,
+    close_scraper_client,
 )
 
 logging.basicConfig(level=logging.INFO)
@@ -66,10 +69,18 @@ async def lifespan(app: FastAPI):
     limits = httpx.Limits(max_connections=20, max_keepalive_connections=10)
     app.state.tmdb_client = httpx.AsyncClient(timeout=15, limits=limits)
 
+    # Same fix, applied to the Letterboxd scraper: previously every
+    # scrape_* call opened (and immediately discarded) its own
+    # httpx.AsyncClient, paying a fresh TCP/TLS handshake to letterboxd.com
+    # on every request instead of reusing a warm keep-alive connection.
+    # This was the main source of slow response times.
+    await init_scraper_client()
+
     yield
 
-    # Shutdown: close the pooled client cleanly
+    # Shutdown: close the pooled clients cleanly
     await app.state.tmdb_client.aclose()
+    await close_scraper_client()
 
 app = FastAPI(title="Letterboxd Blend Provider API", lifespan=lifespan)
 
@@ -172,6 +183,24 @@ async def get_user_review(username: str, slug: str, url: Optional[str] = None):
         logger.error(f"Failed scraping review for {username} - {slug}: {e}")
         raise HTTPException(status_code=500, detail=f"Scraping review failed: {e}")
 
+@app.get("/films/{slug}/backdrop")
+async def get_film_backdrop(slug: str):
+    cache_key = f"film:backdrop:{slug.lower()}"
+    cached = await cache.get(cache_key)
+    if cached is not None:
+        return {"backdrop": cached}
+
+    try:
+        backdrop = await scrape_backdrop(slug)
+        await cache.set(cache_key, backdrop, 3600)
+        return {"backdrop": backdrop}
+    except ScrapeBlockedError as e:
+        logger.error(f"Blocked scraping backdrop for {slug}: {e}")
+        raise HTTPException(status_code=503, detail="Temporarily blocked by Letterboxd, please retry shortly")
+    except Exception as e:
+        logger.error(f"Failed scraping backdrop for {slug}: {e}")
+        raise HTTPException(status_code=500, detail=f"Scraping backdrop failed: {e}")
+
 @app.get("/tmdb/search")
 async def tmdb_search(title: str, year: str = ""):
     cache_key = f"tmdb:search:{title.lower()}:{year}"
@@ -197,7 +226,6 @@ async def tmdb_search(title: str, year: str = ""):
         try:
             async with _TMDB_SEM:
                 response = await client.get(url, params=params)
-            break
         except httpx.RequestError as exc:
             if attempt < retries - 1:
                 logger.warning(
@@ -209,6 +237,27 @@ async def tmdb_search(title: str, year: str = ""):
                 continue
             logger.error(f"TMDB network error for '{clean_title}' ({year}): {exc!r}")
             raise HTTPException(status_code=502, detail=f"TMDB request failed (network error): {exc}")
+
+        # 403/429 from TMDB are usually transient (a shared/rate-limited
+        # API key, or a momentary throttle) rather than a permanent
+        # failure - retry those with backoff instead of failing on the
+        # first hit. 5xx from TMDB's own servers is the same story.
+        # Any other non-200 (e.g. a genuine bad request) is not worth
+        # retrying.
+        if response.status_code in (403, 429) or response.status_code >= 500:
+            if attempt < retries - 1:
+                retry_after = response.headers.get("Retry-After")
+                wait = float(retry_after) if retry_after else backoff
+                logger.warning(
+                    f"TMDB returned {response.status_code} for '{clean_title}' ({year}) "
+                    f"(attempt {attempt + 1}/{retries}), retrying in {wait:.1f}s"
+                )
+                await asyncio.sleep(wait)
+                backoff *= 2
+                continue
+            # fall through to the status-code error handling below
+
+        break
 
     if response.status_code != 200:
         body_snippet = response.text[:300]
@@ -237,4 +286,8 @@ async def tmdb_search(title: str, year: str = ""):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    # reload=True is a dev-only feature - it restarts the whole process
+    # (wiping the in-memory cache fallback) on every file change. Never
+    # run this in production; set ENV=production to disable it.
+    is_dev = os.environ.get("ENV", "development") != "production"
+    uvicorn.run("main:app", host="0.0.0.0", port=int(os.environ.get("PORT", 8000)), reload=is_dev)

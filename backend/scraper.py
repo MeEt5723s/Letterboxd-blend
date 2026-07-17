@@ -12,7 +12,13 @@ logger = logging.getLogger(__name__)
 
 PLACEHOLDER_PATTERNS = [
     re.compile(r"there is no review for this (diary )?entry", re.IGNORECASE),
-    re.compile(r"^add a review\??$", re.IGNORECASE)
+    re.compile(r"^add a review\??$", re.IGNORECASE),
+    # Letterboxd's spoiler-warning prompt (shown in place of a spoiler
+    # review until the reader clicks through). This should never be the
+    # element we scrape - see the js-spoiler-container fix in
+    # scrape_review() - but kept here too as a safety net in case the
+    # selector ever matches it again.
+    re.compile(r"this review may contain spoilers", re.IGNORECASE),
 ]
 
 DEFAULT_HEADERS = {
@@ -32,6 +38,41 @@ DEFAULT_HEADERS = {
 # to get re-blocked. Tune this up/down if you see 403s return.
 PAGE_FETCH_CONCURRENCY = 6
 _GLOBAL_SEM = asyncio.Semaphore(PAGE_FETCH_CONCURRENCY)
+
+# Single shared, connection-pooled client reused across every scrape call,
+# instead of opening (and immediately throwing away) a brand-new
+# httpx.AsyncClient - and therefore a brand-new TCP/TLS handshake to
+# letterboxd.com - on every request. This mirrors the fix already applied
+# to the TMDB client in main.py's lifespan; without it, DEFAULT_HEADERS'
+# "Connection: keep-alive" never actually gets to keep anything alive,
+# since the client (and its pool) is discarded right after each call.
+# Initialized in init_scraper_client() / torn down in close_scraper_client(),
+# both called from main.py's lifespan.
+_SCRAPER_CLIENT: Optional[httpx.AsyncClient] = None
+
+
+async def init_scraper_client() -> None:
+    global _SCRAPER_CLIENT
+    limits = httpx.Limits(
+        max_connections=PAGE_FETCH_CONCURRENCY * 3,
+        max_keepalive_connections=PAGE_FETCH_CONCURRENCY,
+    )
+    _SCRAPER_CLIENT = httpx.AsyncClient(limits=limits)
+
+
+async def close_scraper_client() -> None:
+    global _SCRAPER_CLIENT
+    if _SCRAPER_CLIENT is not None:
+        await _SCRAPER_CLIENT.aclose()
+        _SCRAPER_CLIENT = None
+
+
+def _get_client() -> httpx.AsyncClient:
+    if _SCRAPER_CLIENT is None:
+        raise RuntimeError(
+            "Scraper client not initialized - call init_scraper_client() at startup"
+        )
+    return _SCRAPER_CLIENT
 
 
 class ScrapeBlockedError(Exception):
@@ -326,91 +367,156 @@ def _parse_following_page(html: str) -> List[Dict[str, Any]]:
 
 
 async def scrape_user_films(username: str) -> List[Dict[str, Any]]:
-    async with httpx.AsyncClient() as client:
-        pages_html = await _fetch_all_pages(
-            client, lambda p: f"https://letterboxd.com/{username}/films/page/{p}/"
-        )
-        movies: List[Dict[str, Any]] = []
-        for html in pages_html:
-            movies.extend(_parse_films_page(html))
-        _fill_missing_review_urls(username, movies)
-        return movies
+    client = _get_client()
+    pages_html = await _fetch_all_pages(
+        client, lambda p: f"https://letterboxd.com/{username}/films/page/{p}/"
+    )
+    movies: List[Dict[str, Any]] = []
+    for html in pages_html:
+        movies.extend(_parse_films_page(html))
+    _fill_missing_review_urls(username, movies)
+    return movies
 
 
 async def scrape_watchlist(username: str) -> List[Dict[str, Any]]:
-    async with httpx.AsyncClient() as client:
-        pages_html = await _fetch_all_pages(
-            client, lambda p: f"https://letterboxd.com/{username}/watchlist/page/{p}/"
-        )
-        movies: List[Dict[str, Any]] = []
-        for html in pages_html:
-            movies.extend(_parse_watchlist_page(html))
-        return movies
+    client = _get_client()
+    pages_html = await _fetch_all_pages(
+        client, lambda p: f"https://letterboxd.com/{username}/watchlist/page/{p}/"
+    )
+    movies: List[Dict[str, Any]] = []
+    for html in pages_html:
+        movies.extend(_parse_watchlist_page(html))
+    return movies
 
 
 async def scrape_following(username: str) -> List[Dict[str, Any]]:
-    async with httpx.AsyncClient() as client:
-        pages_html = await _fetch_all_pages(
-            client, lambda p: f"https://letterboxd.com/{username}/following/page/{p}/"
-        )
-        people: List[Dict[str, Any]] = []
-        seen = set()
-        for html in pages_html:
-            for person in _parse_following_page(html):
-                if person["username"] in seen:
-                    continue
-                seen.add(person["username"])
-                people.append(person)
-        return people
+    client = _get_client()
+    pages_html = await _fetch_all_pages(
+        client, lambda p: f"https://letterboxd.com/{username}/following/page/{p}/"
+    )
+    people: List[Dict[str, Any]] = []
+    seen = set()
+    for html in pages_html:
+        for person in _parse_following_page(html):
+            if person["username"] in seen:
+                continue
+            seen.add(person["username"])
+            people.append(person)
+    return people
 
 
 async def scrape_avatar(username: str) -> Optional[str]:
-    async with httpx.AsyncClient() as client:
-        url = f"https://letterboxd.com/{username}/"
-        html = await get_page_html(client, url)
-        if not html:
-            return None
+    client = _get_client()
+    url = f"https://letterboxd.com/{username}/"
+    html = await get_page_html(client, url)
+    if not html:
+        return None
 
-        tree = HTMLParser(html)
-        img_el = tree.css_first(".profile-avatar img")
-        if img_el:
-            return img_el.attributes.get("src")
+    tree = HTMLParser(html)
+    img_el = tree.css_first(".profile-avatar img")
+    if img_el:
+        return img_el.attributes.get("src")
     return None
+
+
+def _extract_backdrop_url(tree: HTMLParser) -> Optional[str]:
+    """
+    Pull the backdrop image URL off a Letterboxd film page. Confirmed
+    against live markup: the '#backdrop' element carries the URLs as data
+    attributes (not a plain <img src>, since Letterboxd applies it as a
+    background image via its own JS). Prefer the retina/2x variant, then
+    the standard version, then the mobile-sized one as a last resort.
+    Nested inside are '.backdropimage' (the actual background-image div)
+    and '.backdropmask' (just a gradient overlay, no image data).
+    """
+    backdrop_el = tree.css_first("#backdrop")
+    if not backdrop_el:
+        return None
+
+    for attr in ("data-backdrop2x", "data-backdrop", "data-backdrop-mobile"):
+        val = backdrop_el.attributes.get(attr)
+        if val:
+            return val
+
+    return None
+
+
+async def scrape_backdrop(slug: str) -> Optional[str]:
+    """
+    Fetch a Letterboxd film page and pull its backdrop image, if it has
+    one. Returns None both when the film genuinely has no backdrop set
+    (common for obscure/poster-only entries) and when the page doesn't
+    exist - callers should treat None as "nothing to show, fall back to
+    TMDB" either way.
+    """
+    client = _get_client()
+    url = f"https://letterboxd.com/film/{slug}/"
+    html = await get_page_html(client, url)
+    if not html:
+        return None
+
+    tree = HTMLParser(html)
+    return _extract_backdrop_url(tree)
 
 
 async def scrape_review(username: str, slug: str, review_url: Optional[str] = None) -> Optional[str]:
     url = review_url or f"https://letterboxd.com/{username}/film/{slug}/"
-    async with httpx.AsyncClient() as client:
-        html = await get_page_html(client, url)
-        if not html:
-            return None
+    client = _get_client()
+    html = await get_page_html(client, url)
+    if not html:
+        return None
 
-        tree = HTMLParser(html)
-        candidates = [
-            ".review .body-text",
-            ".js-review-body .body-text",
-            ".review-body .body-text",
-            ".body-text"
-        ]
+    tree = HTMLParser(html)
+    # NOTE on ordering: Letterboxd renders spoiler-flagged reviews as
+    # TWO separate elements, both carrying the class "body-text":
+    #   <p class="body-text -prose js-spoiler-container">
+    #       This review may contain spoilers. ...
+    #   </p>
+    #   <div class="body-text -prose -reset js-review-body ...">
+    #       <p>the actual review</p>
+    #   </div>
+    # "js-review-body" and "body-text" are classes on the SAME element
+    # here (not nested), so a descendant selector like
+    # ".js-review-body .body-text" never matches it. That previously
+    # caused every candidate to miss until the bare ".body-text"
+    # fallback, which matches the spoiler-warning <p> FIRST (it comes
+    # before the real review in document order) - so the warning text
+    # was scraped as if it were the review itself.
+    #
+    # Fix: match ".js-review-body" directly (not as a descendant), and
+    # try it before the generic ".body-text" catch-all.
+    candidates = [
+        ".review .js-review-body",
+        ".js-review-body",
+        ".review .body-text",
+        ".review-body .body-text",
+        ".body-text"
+    ]
 
-        for selector in candidates:
-            elements = tree.css(selector)
-            for el in elements:
-                el_html = el.html or ""
-                el_html = re.sub(r"<br\s*/?>", "\n", el_html, flags=re.IGNORECASE)
+    for selector in candidates:
+        elements = tree.css(selector)
+        for el in elements:
+            # Never treat the spoiler-warning prompt itself as review
+            # content, no matter which selector matched it.
+            el_classes = (el.attributes.get("class") or "").split()
+            if "js-spoiler-container" in el_classes:
+                continue
 
-                temp_tree = HTMLParser(el_html)
-                p_elements = temp_tree.css("p")
-                if p_elements:
-                    paragraphs = []
-                    for p in p_elements:
-                        p_html = p.html or ""
-                        p_html = re.sub(r"<br\s*/?>", "\n", p_html, flags=re.IGNORECASE)
-                        paragraphs.append(HTMLParser(p_html).text().strip())
-                    candidate_text = "\n\n".join([p for p in paragraphs if p])
-                else:
-                    candidate_text = temp_tree.text().strip()
+            el_html = el.html or ""
+            el_html = re.sub(r"<br\s*/?>", "\n", el_html, flags=re.IGNORECASE)
 
-                if candidate_text and not any(pat.search(candidate_text) for pat in PLACEHOLDER_PATTERNS):
-                    return candidate_text
+            temp_tree = HTMLParser(el_html)
+            p_elements = temp_tree.css("p")
+            if p_elements:
+                paragraphs = []
+                for p in p_elements:
+                    p_html = p.html or ""
+                    p_html = re.sub(r"<br\s*/?>", "\n", p_html, flags=re.IGNORECASE)
+                    paragraphs.append(HTMLParser(p_html).text().strip())
+                candidate_text = "\n\n".join([p for p in paragraphs if p])
+            else:
+                candidate_text = temp_tree.text().strip()
+
+            if candidate_text and not any(pat.search(candidate_text) for pat in PLACEHOLDER_PATTERNS):
+                return candidate_text
     return None
