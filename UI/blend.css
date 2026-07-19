@@ -877,6 +877,16 @@ h1, h2, h3, h4 {
   min-height: 18px;
   opacity: .9;
   letter-spacing: .02em;
+  transition: transform .15s ease-out;
+}
+
+.loading-count.-pulse {
+  animation: loading-count-pulse .3s ease-out;
+}
+
+@keyframes loading-count-pulse {
+  0% { transform: scale(1.12); opacity: 1; }
+  100% { transform: scale(1); opacity: .9; }
 }
 
 .avatar-placeholder {

@@ -90,6 +90,10 @@ let latestPairwiseMatrix = [];
 let messageRotationTimer = null;
 let progressTrickleTimer = null;
 
+// Tracks in-flight animations for the live per-user film count, keyed by
+// user index - see animateLoadingCount() below.
+const loadingCountAnimations = {};
+
 // Friends added via the "Add Friend" flow that haven't been fetched
 // and folded into the comparison yet — they only become part of
 // `userData` / the rendered comparison once "Compare" is clicked.
@@ -227,7 +231,53 @@ function setLoadingCount(index, count) {
   const el = document.getElementById(`film-count-${index}`);
   if (!el) return;
 
-  el.textContent = `${count} film${count === 1 ? "" : "s"} found`;
+  // The backend reports counts in whole-page jumps (however many films
+  // Letterboxd puts on one page), which would otherwise flash that exact
+  // number at the viewer every update. Smoothly animate the displayed
+  // value up to the real count instead of snapping to it, so it just
+  // reads as "counting up," not "jumped by exactly 72."
+  const target = Math.max(0, Number(count) || 0);
+  const currentTarget = Number(el.dataset.target || 0);
+  if (target < currentTarget) return; // never let the real count go backwards
+  el.dataset.target = target;
+
+  animateLoadingCount(index, el, target);
+}
+
+function animateLoadingCount(index, el, target) {
+  const displayed = Number(el.dataset.displayed || 0);
+  if (displayed === target) return;
+
+  const existing = loadingCountAnimations[index];
+  if (existing) cancelAnimationFrame(existing);
+
+  const start = displayed;
+  const delta = target - start;
+  // Longer jumps get a longer animation (so a 72-film jump doesn't blast
+  // by in one frame), but capped so it never feels sluggish.
+  const duration = Math.min(1100, Math.max(350, delta * 14));
+  const startTime = performance.now();
+
+  const step = (now) => {
+    const progress = Math.min(1, (now - startTime) / duration);
+    const eased = 1 - Math.pow(1 - progress, 3); // ease-out cubic
+    const value = Math.round(start + delta * eased);
+
+    el.dataset.displayed = value;
+    el.textContent = `${value} film${value === 1 ? "" : "s"} found`;
+
+    if (progress < 1) {
+      loadingCountAnimations[index] = requestAnimationFrame(step);
+      return;
+    }
+
+    delete loadingCountAnimations[index];
+    el.classList.remove("-pulse");
+    void el.offsetWidth; // restart the pulse animation even mid-pulse
+    el.classList.add("-pulse");
+  };
+
+  loadingCountAnimations[index] = requestAnimationFrame(step);
 }
 
 // ---------- Loading feedback (messages + progress trickle) ----------
@@ -1361,7 +1411,7 @@ function updateCompareButton() {
 
 async function getAvatar(username) {
   try {
-    const response = await fetch(`http://localhost:8000/users/${encodeURIComponent(username)}/avatar`);
+    const response = await fetch(`https://letterboxd-blend-backend-en2i.onrender.com/users/${encodeURIComponent(username)}/avatar`);
     if (!response.ok) return null;
     const data = await response.json();
     return data.avatar || null;
