@@ -4,11 +4,12 @@ const USER_COLORS = [
   "#00e054", "#40bcf4", "#ff8000", "#ff4081",
   "#b388ff", "#ffd740", "#ff5252", "#69f0ae"
 ];
-import { getUserFilms } from "../scraper/userFilms.js";
+import { API_BASE_URL } from "../config.js";
+import { getUserFilms, getFilmCount } from "../scraper/userFilms.js";
 import { getFollowing } from "../scraper/following.js";
 import { getWatchlist } from "../scraper/watchlist.js";
 import { getUserReview } from "../scraper/review.js";
-import { searchMovie, getBackdrop } from "../api/tmdb.js";
+import { searchMovie, getBackdrop, fetchLetterboxdBackdrop } from "../api/tmdb.js";
 import { setPosterWithFallback } from "../utils/posterUtils.js";
 import {
   computeCommonWatchlist,
@@ -171,6 +172,20 @@ async function fetchUsersWithProgress(usernames) {
     }
 
     setLoadingAvatar(i, avatar);
+  });
+
+  // Fetch every user's real film count in parallel FIRST, then set every
+  // counter's target in the same tick - so they all visibly start
+  // counting up together, instead of each one popping in on its own as
+  // soon as ITS individual /profile request happens to resolve (which
+  // looked like a staggered "one by one" reveal, since response times
+  // vary per user). Trade-off: the slowest user's /profile fetch now
+  // gates when everyone's animation begins, rather than fast users
+  // starting immediately - intentional, since the ask was for a
+  // synchronized reveal over the fastest-possible one.
+  const counts = await Promise.all(usernames.map(u => getFilmCount(u)));
+  usernames.forEach((u, i) => {
+    if (counts[i] != null) setLoadingCount(i, counts[i]);
   });
 
   const filmWork = usernames.map(async (u, i) => {
@@ -1144,6 +1159,30 @@ function bindCloseMovieDetail() {
   }
 }
 
+/**
+ * Prefers the film's own Letterboxd backdrop (scraped via GET
+ * /films/{slug}/backdrop) over TMDB's. Previously fetchLetterboxdBackdrop
+ * was defined in api/tmdb.js but never actually called anywhere - every
+ * backdrop shown was TMDB's, unconditionally, which is why Letterboxd
+ * backdrops never appeared.
+ *
+ * Falls back to TMDB's backdrop_path only when Letterboxd genuinely has
+ * none set for that film (common for obscure/poster-only entries) or the
+ * request fails for any reason (network error, 503 while
+ * blocked/rate-limited, etc) - so something still renders rather than a
+ * blank header.
+ */
+async function resolveBackdrop(slug, tmdbMovie) {
+  try {
+    const lbBackdrop = await fetchLetterboxdBackdrop(slug);
+    if (lbBackdrop) return lbBackdrop;
+  } catch (e) {
+    // Fall through to TMDB below.
+  }
+
+  return tmdbMovie?.backdrop_path ? getBackdrop(tmdbMovie.backdrop_path) : null;
+}
+
 async function openMovieDetail(movie) {
   movieDetailModal.classList.add("open");
 
@@ -1167,9 +1206,7 @@ async function openMovieDetail(movie) {
     tmdbMovie = null;
   }
 
-  const backdropUrl = tmdbMovie?.backdrop_path
-    ? getBackdrop(tmdbMovie.backdrop_path)
-    : null;
+  const backdropUrl = await resolveBackdrop(movie.slug, tmdbMovie);
 
   const year =
     tmdbMovie?.release_date?.slice(0, 4) || slugYear || "";
@@ -1411,7 +1448,7 @@ function updateCompareButton() {
 
 async function getAvatar(username) {
   try {
-    const response = await fetch(`https://letterboxd-blend-backend-en2i.onrender.com/users/${encodeURIComponent(username)}/avatar`);
+    const response = await fetch(`${API_BASE_URL}/users/${encodeURIComponent(username)}/avatar`);
     if (!response.ok) return null;
     const data = await response.json();
     return data.avatar || null;

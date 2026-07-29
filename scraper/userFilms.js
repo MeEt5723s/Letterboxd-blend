@@ -1,68 +1,50 @@
-const API_BASE_URL = "https://letterboxd-blend-backend-en2i.onrender.com";
+import { API_BASE_URL } from "../config.js";
 
 /**
- * Fetches a user's full film list, reporting a live-updating count via
- * onProgress as pages come in from the backend (server-sent events),
- * instead of only knowing anything once the entire scrape is done.
+ * Fetches just a user's real film COUNT (not the film list itself), via
+ * GET /users/{username}/profile - a single cheap page, on the backend's
+ * dedicated fast lane, never queued behind bulk film/watchlist pagination.
  *
- * Falls back to the plain one-shot endpoint if EventSource isn't
- * available in this environment (shouldn't happen in a real browser,
- * but keeps things from hard-failing anywhere weird SSE support is
- * missing).
+ * Exported separately (rather than folded into getUserFilms below) so
+ * callers rendering MULTIPLE users at once - e.g. blend.js's loading
+ * screen - can fire this for every user in parallel, wait for all of them,
+ * and reveal every counter at the same instant. Calling it per-user
+ * on-the-fly the moment each one resolves makes counters pop in staggered
+ * by network timing instead of together.
+ *
+ * Returns null (not a throw) on any failure - callers should treat that as
+ * "no early count available for this user," not a hard error.
  */
-export function getUserFilms(username, onProgress) {
-  if (typeof EventSource === "undefined") {
-    return getUserFilmsFallback(username);
+export async function getFilmCount(username) {
+  try {
+    const url = `${API_BASE_URL}/users/${encodeURIComponent(username)}/films/count`;
+    const response = await fetch(url);
+    if (!response.ok) return null;
+
+    const data = await response.json();
+    const count = Number(data.count);
+    return Number.isFinite(count) ? count : null;
+  } catch (e) {
+    // Non-fatal: no early count to animate toward, but the real /films
+    // fetch below still runs and resolves normally either way.
+    return null;
   }
-
-  return new Promise((resolve, reject) => {
-    const url = `${API_BASE_URL}/users/${encodeURIComponent(username)}/films/stream`;
-    const source = new EventSource(url);
-    let settled = false;
-
-    const cleanup = () => {
-      source.close();
-    };
-
-    source.onmessage = (event) => {
-      let payload;
-      try {
-        payload = JSON.parse(event.data);
-      } catch (e) {
-        return; // Malformed chunk - ignore and wait for the next one.
-      }
-
-      if (payload.error) {
-        settled = true;
-        cleanup();
-        reject(new Error(payload.detail || `Failed to fetch films for ${username}`));
-        return;
-      }
-
-      if (typeof payload.count === "number" && onProgress) {
-        onProgress(payload.count);
-      }
-
-      if (payload.done) {
-        settled = true;
-        cleanup();
-        resolve(payload.films || []);
-      }
-    };
-
-    source.onerror = () => {
-      // EventSource fires onerror on the connection dropping too, not
-      // just on genuine failures, but if we already resolved/rejected
-      // via a "done"/"error" message, there's nothing left to do here.
-      if (settled) return;
-      settled = true;
-      cleanup();
-      reject(new Error(`Connection lost while fetching films for ${username}`));
-    };
-  });
 }
 
-async function getUserFilmsFallback(username) {
+/**
+ * Fetches a user's full film list. onProgress, if given, is called once
+ * with the exact real count when the list lands - useful as a final
+ * correction after getFilmCount()'s earlier estimate (Letterboxd's
+ * headline stat can drift slightly from the actual scraped list, e.g.
+ * private/unrated entries).
+ */
+export async function getUserFilms(username, onProgress) {
+  const films = await getUserFilmsList(username);
+  if (onProgress) onProgress(films.length);
+  return films;
+}
+
+async function getUserFilmsList(username) {
   const url = `${API_BASE_URL}/users/${encodeURIComponent(username)}/films`;
   const response = await fetch(url);
   if (!response.ok) {

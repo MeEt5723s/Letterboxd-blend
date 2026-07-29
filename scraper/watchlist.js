@@ -1,4 +1,4 @@
-const API_BASE_URL = "https://letterboxd-blend-backend-en2i.onrender.com";
+import { API_BASE_URL } from "../config.js";
 
 export async function getWatchlist(username) {
   const url = `${API_BASE_URL}/users/${encodeURIComponent(username)}/watchlist`;

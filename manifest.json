@@ -6,7 +6,8 @@
   "permissions": ["tabs"],
 
   "host_permissions": [
-    "https://api.themoviedb.org/*"
+    "https://api.themoviedb.org/*",
+    "http://localhost:8000/*"
   ],
 
   "background": {
