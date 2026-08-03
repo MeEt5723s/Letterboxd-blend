@@ -140,6 +140,7 @@ document.getElementById("users").addEventListener("click", e => {
   await loadAllUsers(users);
   recomputeAndRender();
   finishLoading();
+  loadRecommendations(users);
 })();
 
 async function loadAllUsers(usernames) {
@@ -880,6 +881,141 @@ function renderWatchTogether(movies) {
   });
 }
 
+// ---------- Recommendations ----------
+// This comes from the separate backend project, so it is intentionally
+// independent of the comparison flow. A stopped local API must not prevent
+// the rest of Blend from rendering.
+function recommendationListFromResponse(data) {
+  const candidates = Array.isArray(data)
+    ? data
+    : data?.recommendations || data?.movies || data?.results || data?.data;
+
+  return Array.isArray(candidates) ? candidates : [];
+}
+
+function normalizeRecommendation(item) {
+  if (!item || typeof item !== "object") return null;
+
+  const title = item.title || item.name || item.film_title;
+  if (!title) return null;
+
+  return {
+    ...item,
+    title,
+    id: item.id || item.film_id || item.letterboxd_id,
+    slug: item.slug || item.film_slug || item.letterboxd_slug,
+    letterboxdUrl: item.letterboxd_url || item.letterboxdUrl || item.url,
+    poster: item.poster || item.poster_url || item.image || item.image_url,
+    year: item.year || item.release_year || item.release_date?.slice?.(0, 4),
+    reason: item.reason || item.explanation || item.why || item.description,
+    watchedBy: Array.isArray(item.watched_by) ? item.watched_by : [],
+    unseenBy: Array.isArray(item.unseen_by) ? item.unseen_by : [],
+    basedOn: Array.isArray(item.based_on) ? item.based_on : [],
+    ratings: {},
+    liked: {},
+    reviewUrl: {}
+  };
+}
+
+function recommendationLetterboxdUrl(movie) {
+  if (movie.letterboxdUrl) return movie.letterboxdUrl;
+  if (movie.slug) return letterboxdFilmUrl(movie.slug);
+
+  // The group recommendation response currently does not require a slug.
+  // Letterboxd's film URLs use this same title-slug convention for the vast
+  // majority of films, keeping the recommendation card a direct link even
+  // when only a title is supplied.
+  const titleSlug = movie.title
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/&/g, "and")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+  return `https://letterboxd.com/film/${titleSlug}/`;
+}
+
+let recommendationRequestId = 0;
+
+async function loadRecommendations(usernames) {
+  const grid = document.getElementById("recommendations-grid");
+  const subtitle = document.getElementById("recommendations-subtitle");
+  const group = Array.isArray(usernames) ? usernames.filter(Boolean) : [];
+  if (!grid || !subtitle || !group.length) return;
+
+  const requestId = ++recommendationRequestId;
+  const params = new URLSearchParams();
+  group.forEach(username => params.append("users", username));
+
+  grid.innerHTML = '<p class="empty-state recommendation-loading">Curating the next great watch...</p>';
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/recommendations?${params}`);
+    if (!response.ok) {
+      throw new Error(`Recommendations request failed (${response.status})`);
+    }
+
+    const data = await response.json();
+    if (requestId !== recommendationRequestId) return;
+    const movies = recommendationListFromResponse(data)
+      .map(normalizeRecommendation)
+      .filter(Boolean);
+
+    const responseUsers = Array.isArray(data?.users) ? data.users : group;
+    renderRecommendations(movies, responseUsers);
+  } catch {
+    if (requestId !== recommendationRequestId) return;
+    grid.innerHTML = '<p class="empty-state">The recommendation booth is taking a short intermission. Start your local backend to see fresh picks here.</p>';
+    subtitle.textContent = "Fresh picks will appear here when your recommendation service is ready.";
+  }
+}
+
+function renderRecommendations(movies, usernames) {
+  const grid = document.getElementById("recommendations-grid");
+  const subtitle = document.getElementById("recommendations-subtitle");
+  if (!grid || !subtitle) return;
+
+  grid.innerHTML = "";
+  const groupLabel = usernames.join(" + ");
+  subtitle.textContent = movies.length
+    ? `One shared queue for ${groupLabel} — because the algorithm has taste.`
+    : `No fresh picks for ${groupLabel} just yet. Check back after your next watch.`;
+
+  if (!movies.length) {
+    grid.innerHTML = '<p class="empty-state">No recommendations have rolled in yet.</p>';
+    return;
+  }
+
+  movies.forEach(movie => {
+    const card = document.createElement("div");
+    card.className = "movie-card recommendation-card recommendation-card--interactive";
+    card.innerHTML = `
+      <img alt="${movie.title}" loading="lazy">
+      <p class="title">${movie.title}${movie.year ? ` <span class="recommendation-year">(${movie.year})</span>` : ""}</p>
+      ${
+        movie.watchedBy.length
+          ? `
+            <p class="recommendation-peer">Already watched by ${movie.watchedBy.join(", ")}</p>
+            ${
+              movie.reason
+                ? `<p class="recommendation-reason">${movie.reason}</p>`
+                : ""
+            }
+          `
+          : ""
+      }
+    `;
+
+    setPosterWithFallback(card.querySelector("img"), movie);
+
+    card.addEventListener("click", () => {
+      window.open(recommendationLetterboxdUrl(movie), "_blank", "noopener");
+    });
+    grid.appendChild(card);
+  });
+}
+
 function renderPairwiseInto(container, matrix) {
   container.innerHTML = "";
 
@@ -1433,6 +1569,7 @@ async function removeFriend(username) {
 
   if (!wasPending) {
     recomputeAndRender();
+    loadRecommendations(users);
   }
 }
 
@@ -1491,4 +1628,5 @@ document
     recomputeAndRender();
     finishLoading();
     updateCompareButton();
+    loadRecommendations(users);
   });

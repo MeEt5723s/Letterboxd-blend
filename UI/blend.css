@@ -786,11 +786,63 @@ h1, h2, h3, h4 {
    Movie grids / cards
    ========================================================= */
 #movies-grid,
-#watch-together-grid {
+#watch-together-grid,
+#recommendations-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
   gap: 26px;
 }
+
+.recommendations-section {
+  margin-top: 62px;
+  padding: 30px;
+  border: 1px solid rgba(0, 224, 84, .16);
+  border-radius: var(--radius-lg);
+  background:
+    radial-gradient(420px 180px at 10% 0%, rgba(0, 224, 84, .10), transparent 70%),
+    var(--panel);
+}
+
+.recommendations-heading-row { margin-bottom: 22px; }
+
+.section-kicker {
+  margin: 0 0 7px;
+  color: var(--green);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .12em;
+}
+
+.recommendations-subtitle {
+  margin: 8px 0 0;
+  color: var(--text-dim);
+  font-size: 14px;
+}
+
+.recommendation-card { cursor: default; }
+.recommendation-card--interactive { cursor: pointer; }
+
+.recommendation-year {
+  color: var(--text-faint);
+  font-weight: 500;
+}
+
+.recommendation-reason {
+  margin: 7px 0 0;
+  color: var(--text-dim);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.recommendation-peer {
+  margin: 9px 0 0;
+  color: var(--green);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .02em;
+}
+
+.recommendation-loading { grid-column: 1 / -1; }
 
 .movie-card {
   transition: transform .28s var(--ease);
@@ -1447,8 +1499,10 @@ h1, h2, h3, h4 {
   .header h1 { font-size: 30px; }
   .modal-content { padding: 26px 20px; border-radius: 18px; }
   .movie-detail-title-wrap { left: 20px; right: 60px; }
-  #movies-grid, #watch-together-grid {
+  #movies-grid, #watch-together-grid, #recommendations-grid {
     grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
     gap: 18px;
   }
+
+  .recommendations-section { padding: 24px 20px; }
 }
